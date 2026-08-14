@@ -14,7 +14,9 @@ test("portal público muestra solo proyecciones verificadas", async ({ page }) =
 
 test("mapa filtra necesidades y seguimiento explica el recorrido", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".maplibregl-canvas")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".maplibregl-canvas, .leaflet-container")).toBeVisible({ timeout: 10_000 });
+  const realMapEngine = await page.locator(".maplibregl-canvas, .leaflet-container").first().getAttribute("class");
+  expect(realMapEngine).toMatch(/maplibregl-canvas|leaflet-container/);
   await expect(page.getByText("Actualización en vivo", { exact: true })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("heading", { name: "Acopio y despachos en tiempo real" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Centro de acopio.*Centro de acopio Norte/ })).toBeVisible();

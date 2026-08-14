@@ -8,3 +8,5 @@
 | G-004 | P2 | Proveedor financiero no definido | Adaptador sandbox; cero tarjeta/cuenta | Contrato + conciliación en staging |
 | G-005 | P2 | DPIA/base legal pendiente | Minimización y retención provisional | Validación jurídica antes de G2 |
 | G-006 | P2 | Marca y fuentes oficiales no autorizadas | Marca neutra y evento “simulado” | Aprobación de identidad/fuentes |
+| G-007 | P2 | Protección de contraseñas filtradas desactivada en Supabase Auth | Administración del proyecto remoto | Habilitar el control y repetir asesor de seguridad |
+| G-008 | P2 | Preview Vercel protegido y no visible para el conector | Enlazar proyecto/equipo y persistir variables | Recorrido remoto navegador → función → Supabase |

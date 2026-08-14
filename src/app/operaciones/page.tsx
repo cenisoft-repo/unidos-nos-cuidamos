@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AlertTriangle, ArrowRight, Boxes, ClipboardCheck, Download, LogOut, QrCode, Search, ShieldCheck, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { currencyFormat, formatDate, numberFormat } from "@/lib/format";
 import { labelStatus } from "@/lib/constants";
 import { StatusPill } from "@/components/status-pill";
@@ -36,6 +37,7 @@ export default async function OperationsPage() {
     supabase.from("expense_requests").select("id,amount,purpose,status,created_at").order("created_at", { ascending: false }).limit(8),
     supabase.from("audit_events").select("id", { count: "exact", head: true }),
   ]);
+  assertSupabaseSuccess("centro_operativo", [profileResult, membershipsResult, needsResult, intakesResult, lotsResult, txResult, expensesResult, auditsResult]);
 
   const memberships = (membershipsResult.data ?? []) as unknown as Membership[];
   const roles = new Set(memberships.map((item) => item.role));

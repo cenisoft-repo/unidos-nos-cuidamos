@@ -14,6 +14,7 @@ import {
   Truck,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { DEMO_EVENT_ID, DEMO_EVENT_SLUG, NEED_CATEGORIES } from "@/lib/constants";
 import { numberFormat } from "@/lib/format";
 import { toPublicCollectionCenter, toPublicLogisticsPoint, type PublicCollectionCenterRow, type PublicLogisticsPointRow } from "@/lib/public-types";
@@ -43,13 +44,15 @@ export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const supabase = await createClient();
-  const [{ data: dashboard }, { data: needs }, { data: mapNeeds }, { data: centerRows }, { data: logisticsRows }] = await Promise.all([
+  const results = await Promise.all([
     supabase.from("public_event_dashboard").select("*").eq("slug", DEMO_EVENT_SLUG).maybeSingle(),
     supabase.from("public_need_projections").select("id,category,summary,location_label,status,needed_quantity,covered_quantity,unit").eq("event_id", DEMO_EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
     supabase.rpc("public_need_map", { p_event_id: DEMO_EVENT_ID }),
     supabase.rpc("public_collection_centers", { p_event_id: DEMO_EVENT_ID }),
     supabase.rpc("public_logistics_map", { p_event_id: DEMO_EVENT_ID }),
   ]);
+  assertSupabaseSuccess("portada", results);
+  const [{ data: dashboard }, { data: needs }, { data: mapNeeds }, { data: centerRows }, { data: logisticsRows }] = results;
 
   const visibleNeeds = (needs ?? []) as NeedProjection[];
   const territorialNeeds = (mapNeeds ?? []) as MapNeedProjection[];

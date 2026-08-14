@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { DEMO_EVENT_ID } from "@/lib/constants";
 import { addDataSheet, createExportWorkbook, workbookResponse } from "@/lib/excel-workbook";
+import { databaseUnavailableResponse, firstSupabaseError } from "@/lib/supabase/results";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,15 +47,20 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Debes iniciar sesión" }, { status: 401 });
 
-  const { data: memberships } = await supabase.from("memberships").select("id").eq("user_id", user.id).eq("event_id", DEMO_EVENT_ID).eq("active", true).limit(1);
+  const membershipResult = await supabase.from("memberships").select("id").eq("user_id", user.id).eq("event_id", DEMO_EVENT_ID).eq("active", true).limit(1);
+  if (membershipResult.error) return databaseUnavailableResponse("membresia_exportacion_operativa", membershipResult.error);
+  const memberships = membershipResult.data;
   if (!memberships?.length) return Response.json({ error: "No tienes una membresía activa para este evento" }, { status: 403 });
 
-  const [{ data: needsData }, { data: intakesData }, { data: lotsData }, { data: financeData }] = await Promise.all([
+  const results = await Promise.all([
     supabase.from("need_cases").select("tracking_code,category,description,public_location_text,status,priority_score,expires_at,created_at").eq("event_id", DEMO_EVENT_ID).order("created_at", { ascending: false }),
     supabase.from("donation_intakes").select("id,tracking_code,organization_id,kind,status,public_attribution_kind,donor_type,economic_sector,specific_destination,destination_department,destination_municipality,estimated_beneficiaries,delivery_channel,declared_amount,currency,submitted_at,organizations(name),donation_intake_items(id,category,description,quantity,unit,condition,storage_requirement,declared_estimated_value_cop)").eq("event_id", DEMO_EVENT_ID).order("submitted_at", { ascending: false }),
     supabase.from("inventory_lots").select("lot_code,category,status,quantity_initial,unit,condition,created_at").eq("event_id", DEMO_EVENT_ID).order("created_at", { ascending: false }),
     supabase.from("financial_transactions").select("public_reference,transaction_type,amount,currency,status,provider,reconciled_at,created_at").eq("event_id", DEMO_EVENT_ID).order("created_at", { ascending: false }),
   ]);
+  const queryError = firstSupabaseError(results);
+  if (queryError) return databaseUnavailableResponse("exportacion_operativa", queryError);
+  const [{ data: needsData }, { data: intakesData }, { data: lotsData }, { data: financeData }] = results;
 
   const needs = (needsData ?? []) as NeedRow[];
   const intakes = (intakesData ?? []) as unknown as IntakeRow[];

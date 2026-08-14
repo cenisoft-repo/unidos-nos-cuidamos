@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BadgeCheck, Boxes, LockKeyhole, ScanLine } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { DEMO_EVENT_ID } from "@/lib/constants";
 import { toPublicCollectionCenter, type PublicCollectionCenterRow } from "@/lib/public-types";
 import { DonationIntakeForm } from "@/components/donation-intake-form";
@@ -19,15 +20,19 @@ export default async function DonatePage({
   const supabase = await createClient();
   const query = await searchParams;
   const initialCenterId = typeof query.centro === "string" ? query.centro : undefined;
-  const [{ data: { user } }, { data: centerRows }] = await Promise.all([
+  const [userResult, centersResult] = await Promise.all([
     supabase.auth.getUser(),
     supabase.rpc("public_collection_centers", { p_event_id: DEMO_EVENT_ID }),
   ]);
+  assertSupabaseSuccess("centros_aporte", [centersResult]);
+  const { data: { user } } = userResult;
+  const { data: centerRows } = centersResult;
   const centers = ((centerRows ?? []) as PublicCollectionCenterRow[]).map(toPublicCollectionCenter);
   let partner: Partner | null = null;
   if (user) {
-    const { data } = await supabase.from("memberships").select("organization_id, organizations(name)").eq("user_id", user.id).eq("role", "partner_reporter").eq("active", true).limit(1).maybeSingle();
-    partner = data as unknown as Partner | null;
+    const membershipResult = await supabase.from("memberships").select("organization_id, organizations(name)").eq("user_id", user.id).eq("role", "partner_reporter").eq("active", true).limit(1).maybeSingle();
+    assertSupabaseSuccess("membresia_aliado", [membershipResult]);
+    partner = membershipResult.data as unknown as Partner | null;
   }
 
   return <>

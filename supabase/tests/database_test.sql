@@ -1,5 +1,21 @@
 begin;
-select plan(40);
+select plan(41);
+
+select is((
+  select count(*)::integer
+  from pg_catalog.pg_constraint as foreign_key
+  join pg_catalog.pg_class as target_table on target_table.oid = foreign_key.conrelid
+  join pg_catalog.pg_namespace as table_schema on table_schema.oid = target_table.relnamespace
+  join lateral unnest(foreign_key.conkey) as key_column(attnum) on true
+  where foreign_key.contype = 'f'
+    and table_schema.nspname = 'public'
+    and not exists (
+      select 1
+      from pg_catalog.pg_index as existing_index
+      where existing_index.indrelid = foreign_key.conrelid
+        and key_column.attnum = any(existing_index.indkey)
+    )
+), 0, 'Toda clave foránea pública tiene un índice de soporte');
 
 select has_table('public', 'need_cases', 'Existe el modelo operacional de necesidades');
 select has_table('public', 'audit_events', 'Existe auditoría append-only');

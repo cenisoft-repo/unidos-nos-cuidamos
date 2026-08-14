@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BadgeCheck, Building2, Clock3, Download, Scale, ShieldCheck } from "lucide-react";
 import { TransparencyDashboard, type DashboardNeed } from "@/components/transparency-dashboard";
 import { createClient } from "@/lib/supabase/server";
+import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { DEMO_EVENT_ID, labelStatus } from "@/lib/constants";
 import { formatDate, numberFormat } from "@/lib/format";
 
@@ -54,6 +55,7 @@ export default async function TransparencyPage() {
       .eq("published", true)
       .order("updated_at", { ascending: false }),
   ]);
+  assertSupabaseSuccess("transparencia", [metricResult, needsResult]);
 
   const allMetrics = (metricResult.data ?? []) as Metric[];
   const metrics = Array.from(

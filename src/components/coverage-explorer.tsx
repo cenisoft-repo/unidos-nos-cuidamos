@@ -624,7 +624,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
         {mapState === "fallback" && (
           <div className={`${styles.mapFeedback} ${styles.visualFallback}`}>
             <div className={styles.fallbackMapCanvas} ref={fallbackMapContainerRef} />
-            <div className={styles.fallbackNote}><MapPin size={16} /><span><strong>Mapa real compatible</strong>Usamos cartografía OpenStreetMap porque este navegador no habilitó WebGL. Los puntos y eventos en vivo siguen activos.</span></div>
+            <div className={styles.fallbackNote}><MapPin size={16} /><span><strong>Mapa real compatible</strong>Usamos cartografía OpenStreetMap porque el estilo vectorial o WebGL no estuvo disponible. Los puntos y eventos en vivo siguen activos.</span></div>
           </div>
         )}
         <div className={styles.mapMeta} aria-hidden="true">
