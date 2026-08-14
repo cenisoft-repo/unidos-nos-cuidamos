@@ -54,7 +54,8 @@ type MetricRow = {
   dimensions: Record<string, unknown>;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const publicOrigin = new URL(request.url).origin;
   const supabase = await createClient();
   const [{ data: needsData }, { data: donationsData }, { data: centersData }, { data: metricsData }] = await Promise.all([
     supabase.from("public_need_projections").select("id,category,summary,location_label,status,needed_quantity,covered_quantity,unit,updated_at").eq("event_id", DEMO_EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
@@ -97,7 +98,7 @@ export async function GET() {
       { header: "Valor", width: 18, value: (row) => row.value, numFmt: "#,##0.0" },
       { header: "Unidad", width: 14, value: (row) => row.unit },
       { header: "Definición", width: 42, value: (row) => row.definition },
-      { header: "Fuente", width: 38, value: () => "http://127.0.0.1:3000/transparencia" },
+      { header: "Fuente", width: 38, value: () => `${publicOrigin}/transparencia` },
     ],
     rows: summary,
   });

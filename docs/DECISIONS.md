@@ -37,3 +37,11 @@ Decisión: sustituir la silueta Natural Earth de ADR-004 por MapLibre/OpenFreeMa
 Motivo: una cartografía útil necesita calles y topónimos reales incluso en navegadores limitados, sin convertir el mapa público en GPS ni exponer la operación.
 
 Consecuencia: la base cartográfica depende de servicios externos sin SLA para este sandbox y conserva atribución. Los endpoints son configurables. Antes de G2 se deberá escoger un proveedor con contrato/cuota o infraestructura propia; las claves no se infieren, no se versionan y no se exponen si son privilegiadas. La línea de despacho solo representa origen-destino aproximado.
+
+## ADR-006 · 2026-08-14 · Preview remoto sin promoción a piloto
+
+Decisión: publicar el código en un repositorio privado y desplegar un preview de Vercel conectado a un proyecto Supabase remoto vacío, migrado únicamente con fixtures sintéticos. Las funciones `SECURITY DEFINER` parten de denegación y reciben permisos explícitos; el intake de aportes exige membresía autenticada.
+
+Motivo: habilitar una revisión remota autorizada sin confundirla con un sistema operativo, recaudo, campaña pública o piloto con datos vivos.
+
+Consecuencia: la publicación técnica sigue siendo G1 sandbox. No habilita marcas institucionales, PII real, GPS, pagos, comunicaciones, evidencias reales ni atención de emergencias. G2/G3 conservan sus puertas humanas, jurídicas, operativas y de observabilidad.

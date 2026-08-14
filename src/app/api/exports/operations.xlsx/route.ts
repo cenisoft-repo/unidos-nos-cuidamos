@@ -78,7 +78,7 @@ export async function GET() {
   addDataSheet(workbook, {
     name: "Resumen",
     title: "Ruta Solidaria · exportación operativa",
-    description: `Generada para una membresía autenticada · ${new Date().toISOString()} · sandbox local`,
+    description: `Generada para una membresía autenticada · ${new Date().toISOString()} · sandbox de demostración`,
     columns: [
       { header: "Indicador", width: 28, value: (row: typeof summary[number]) => row.metric },
       { header: "Valor", width: 16, value: (row) => row.value, numFmt: "#,##0" },

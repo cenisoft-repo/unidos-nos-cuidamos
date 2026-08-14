@@ -1,5 +1,5 @@
 begin;
-select plan(38);
+select plan(40);
 
 select has_table('public', 'need_cases', 'Existe el modelo operacional de necesidades');
 select has_table('public', 'audit_events', 'Existe auditoría append-only');
@@ -26,6 +26,8 @@ select is((select count(*)::integer from public.public_logistics_map('10000000-0
 select ok(not exists(select 1 from information_schema.columns where table_schema='public' and table_name='public_logistics_projections' and column_name='exact_address_private'), 'La proyección logística no contiene dirección exacta');
 select ok(exists(select 1 from pg_catalog.pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='public_logistics_projections'), 'La logística pública está habilitada para Realtime');
 select ok(not has_table_privilege('anon','public.public_logistics_projections','INSERT'), 'El visitante no puede escribir la proyección logística');
+select ok(not has_function_privilege('anon','public.allocate_stock(uuid,uuid,numeric,text)','EXECUTE'), 'El visitante no puede ejecutar mutaciones operativas SECURITY DEFINER');
+select ok(not has_function_privilege('anon','public.submit_donation_intake(uuid,uuid,public.donation_kind,text,text,jsonb,text,text,boolean,text,jsonb,numeric,uuid,jsonb)','EXECUTE'), 'El visitante no puede registrar datos privados de un aporte sin membresía');
 
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
 create temporary table test_contextual_intake as

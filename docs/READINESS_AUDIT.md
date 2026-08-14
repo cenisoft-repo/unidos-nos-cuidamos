@@ -21,11 +21,11 @@ No se afirma que los riesgos del producto vivo estén contenidos ni que exista p
 
 ## Revalidación G1 local · 2026-08-14
 
-- Reset completo aplica cinco migraciones y seed de Auth/datos sintéticos.
-- Escenarios A–H: 26 afirmaciones E2E SQL; total pgTAP 37/37.
-- RLS: anonimato público, aislamiento de tenant y elevación de privilegio bloqueada.
-- Web: 5/5 Playwright; unitarias 4/4; lint, typecheck y build verdes.
+- Reset completo aplica once migraciones y seed de Auth/datos sintéticos.
+- Escenarios A–H y contratos de esquema: total pgTAP 67/67.
+- RLS: anonimato público acotado, aislamiento de tenant, funciones sensibles y elevación de privilegio bloqueados.
+- Web: 18/18 Playwright; unitarias 6/6; lint, typecheck y build verdes.
 - QA visual: portada escritorio/móvil; sin overflow en 320, 375, 768, 1024 y 1440 px.
 - Lint del esquema `public`: cero hallazgos. Avisos del lint general pertenecen a funciones de la extensión PostGIS administrada.
 
-Veredicto: G1 local apta para demostración controlada. No autoriza G2/G3.
+Veredicto: G1 sandbox apta para demostración controlada local o en preview autorizado. No autoriza G2/G3.

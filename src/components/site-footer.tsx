@@ -8,7 +8,7 @@ export function SiteFooter() {
       <div className="shell footer-grid">
         <div>
           <Logo />
-          <p>Una infraestructura de coordinación local para que cada aporte conserve contexto, custodia y evidencia.</p>
+          <p>Una infraestructura de coordinación para que cada aporte conserve contexto, custodia y evidencia.</p>
         </div>
         <div>
           <h2>Acciones</h2>

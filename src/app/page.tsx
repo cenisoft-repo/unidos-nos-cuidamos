@@ -74,7 +74,7 @@ export default async function HomePage() {
       <section className="hero human-hero">
         <div className="shell hero-layout">
           <div className="hero-copy">
-            <p className="eyebrow">Unidos nos cuidamos · simulación local</p>
+            <p className="eyebrow">Unidos nos cuidamos · simulación segura</p>
             <h1>Ayudar debe sentirse <em>simple y claro.</em></h1>
             <p className="lead">Descubre qué hace falta, elige dónde aportar y comprueba el recorrido sin exponer a nadie.</p>
             <div className="hero-actions">
@@ -179,9 +179,9 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="impact-strip" aria-label="Resumen del ejercicio local">
+      <section className="impact-strip" aria-label="Resumen del ejercicio de demostración">
         <div className="shell live-grid">
-          <div className="live-item intro"><strong>Lo comprobable hoy</strong><span>Datos sintéticos reconciliados en este entorno local.</span></div>
+          <div className="live-item intro"><strong>Lo comprobable hoy</strong><span>Datos sintéticos reconciliados en este entorno sandbox.</span></div>
           <div className="live-item"><strong>{dashboard?.active_needs ?? visibleNeeds.length}</strong><span>necesidades públicas vigentes</span></div>
           <div className="live-item"><strong>{numberFormat.format(dashboard?.units_delivered ?? 113)}</strong><span>unidades cubiertas por categoría</span></div>
           <div className="live-item"><strong>{dashboard?.visible_donations ?? 0}</strong><span>aportes visibles y conciliados</span></div>

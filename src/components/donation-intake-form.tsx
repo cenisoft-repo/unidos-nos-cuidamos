@@ -204,7 +204,7 @@ export function DonationIntakeForm({
   }
 
   if (trackingCode) {
-    const trackingUrl = `http://127.0.0.1:3000/seguimiento?codigo=${encodeURIComponent(trackingCode)}`;
+    const trackingUrl = `${window.location.origin}/seguimiento?codigo=${encodeURIComponent(trackingCode)}`;
     return (
       <article className="donation-ticket">
         <div className="ticket-celebration"><CheckCircle2 size={44} /><span aria-hidden="true">♡</span></div>

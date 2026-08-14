@@ -620,7 +620,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
 
       <div className={styles.canvas} aria-label={`Mapa cartográfico real con ${filteredNeeds.length} necesidades, ${collectionPoints.length} centros y ${dispatches.length} despachos aproximados`}>
         <div className={styles.mapCanvas} ref={mapContainerRef} />
-        {mapState === "loading" && <div className={styles.mapFeedback}><Activity size={18} /> Preparando cartografía local…</div>}
+        {mapState === "loading" && <div className={styles.mapFeedback}><Activity size={18} /> Preparando cartografía real…</div>}
         {mapState === "fallback" && (
           <div className={`${styles.mapFeedback} ${styles.visualFallback}`}>
             <div className={styles.fallbackMapCanvas} ref={fallbackMapContainerRef} />

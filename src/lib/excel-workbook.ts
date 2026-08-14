@@ -26,8 +26,8 @@ function protectText(value: ExportCell): ExportCell {
 
 export function createExportWorkbook(subject: string) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Ruta Solidaria · sandbox local";
-  workbook.lastModifiedBy = "Ruta Solidaria · sandbox local";
+  workbook.creator = "Ruta Solidaria · sandbox de demostración";
+  workbook.lastModifiedBy = "Ruta Solidaria · sandbox de demostración";
   workbook.created = new Date();
   workbook.modified = new Date();
   workbook.subject = subject;
@@ -110,7 +110,7 @@ export function addDataSheet<Row>(
     fitToHeight: 0,
     margins: { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
   };
-  sheet.headerFooter.oddFooter = "Ruta Solidaria · simulación local · &D &T · Página &P de &N";
+  sheet.headerFooter.oddFooter = "Ruta Solidaria · simulación segura · &D &T · Página &P de &N";
   return sheet;
 }
 
