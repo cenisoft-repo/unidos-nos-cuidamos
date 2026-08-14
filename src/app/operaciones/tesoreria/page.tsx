@@ -1,0 +1,9 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
+import { createClient } from "@/lib/supabase/server";
+import { TreasuryConsole } from "@/components/treasury-console";
+
+export const metadata:Metadata={title:"Tesorería sandbox"}; export const dynamic="force-dynamic";
+export default async function TreasuryPage(){const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();if(!user)redirect("/ingresar?next=/operaciones/tesoreria");const {data:memberships}=await supabase.from("memberships").select("role").eq("user_id",user.id).eq("active",true);const roles=new Set((memberships??[]).map(item=>item.role));if(!["treasury_requester","treasury_approver","event_admin","auditor"].some(role=>roles.has(role)))redirect("/operaciones");const [funds,tx,expenses]=await Promise.all([supabase.from("funds").select("id,name,verified,currency"),supabase.from("financial_transactions").select("id,transaction_type,amount,status,public_reference,created_at").eq("status","reconciled").order("created_at",{ascending:false}),supabase.from("expense_requests").select("id,amount,purpose,status,requested_by,created_at").order("created_at",{ascending:false})]);return <div className="ops-shell"><div className="ops-header"><div><Link className="eyebrow" href="/operaciones"><ArrowLeft size={14}/> Centro operativo</Link><h1>Tesorería sandbox</h1><p>Fondo verificado, conciliación idempotente y gasto con separación de funciones.</p></div></div><TreasuryConsole funds={(funds.data??[]) as never[]} transactions={(tx.data??[]) as never[]} expenses={(expenses.data??[]) as never[]} userId={user.id} canRequest={roles.has("treasury_requester")||roles.has("event_admin")} canApprove={roles.has("treasury_approver")||roles.has("event_admin")} /></div>}

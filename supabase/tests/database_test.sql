@@ -1,0 +1,70 @@
+begin;
+select plan(38);
+
+select has_table('public', 'need_cases', 'Existe el modelo operacional de necesidades');
+select has_table('public', 'audit_events', 'Existe auditoría append-only');
+select has_function('public', 'submit_need_report', array['uuid','text','text','text','numeric','text','text','jsonb'], 'Existe RPC segura de reporte');
+select has_function('public', 'submit_donation_intake', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric'], 'Existe RPC idempotente de intake');
+select has_extension('postgis', 'PostGIS está habilitado para consultas territoriales');
+select has_column('public', 'public_need_projections', 'approximate_location', 'La proyección pública conserva un punto geoespacial aproximado');
+select has_function('public', 'public_need_map', array['uuid','double precision','double precision','double precision','double precision'], 'Existe RPC pública con filtro espacial');
+select ok(exists(select 1 from pg_catalog.pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='public_need_projections'),'La proyección pública está habilitada para Realtime');
+select has_column('public', 'donation_intakes', 'preferred_location_id', 'El aporte puede declarar un centro preferido');
+select has_function('public', 'public_collection_centers', array['uuid'], 'Existe proyección segura de centros de acopio');
+select has_function('public', 'submit_donation_intake', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric','uuid'], 'Existe intake guiado con centro preferido');
+select has_column('public', 'donation_intakes', 'donor_type', 'El intake conserva el tipo de donante de forma operacional');
+select has_column('public', 'donation_intakes', 'economic_sector', 'El intake conserva el sector económico declarado');
+select has_column('public', 'donation_intakes', 'specific_destination', 'El intake distingue una destinación específica');
+select has_column('public', 'donation_intakes', 'estimated_beneficiaries', 'La estimación de beneficiarios queda separada del impacto público');
+select has_column('public', 'donation_intakes', 'internal_contact_private', 'El contacto interno permanece en un campo privado');
+select has_column('public', 'donation_intakes', 'observations_private', 'Las observaciones operativas permanecen privadas');
+select has_column('public', 'donation_intake_items', 'declared_estimated_value_cop', 'Cada artículo puede conservar un valor declarado no conciliado');
+select has_function('public', 'submit_donation_intake', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric','uuid','jsonb'], 'Existe intake guiado con contexto de reporte privado');
+select has_table('public', 'public_logistics_projections', 'Existe la proyección cartográfica segura de logística');
+select has_function('public', 'public_logistics_map', array['uuid'], 'Existe RPC pública para centros y despachos aproximados');
+select is((select count(*)::integer from public.public_logistics_map('10000000-0000-0000-0000-000000000001') where source_type='collection_center'), 2, 'El mapa logístico publica dos centros sintéticos activos');
+select ok(not exists(select 1 from information_schema.columns where table_schema='public' and table_name='public_logistics_projections' and column_name='exact_address_private'), 'La proyección logística no contiene dirección exacta');
+select ok(exists(select 1 from pg_catalog.pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='public_logistics_projections'), 'La logística pública está habilitada para Realtime');
+select ok(not has_table_privilege('anon','public.public_logistics_projections','INSERT'), 'El visitante no puede escribir la proyección logística');
+
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
+create temporary table test_contextual_intake as
+select * from public.submit_donation_intake(
+  '10000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000002',
+  'in_kind',
+  'test-contextual-intake-001',
+  'Persona sintética',
+  '{"email":"context@example.invalid"}'::jsonb,
+  'anonymous',
+  '',
+  false,
+  'comprometida',
+  '[{"category":"Agua","description":"Botellas selladas sintéticas","quantity":12,"unit":"litro","condition":"sellado","storage_requirement":"ambiente","declared_estimated_value_cop":84000}]'::jsonb,
+  null,
+  '70000000-0000-0000-0000-000000000002',
+  '{"donor_type":"empresa","economic_sector":"Tecnología","specific_destination":true,"destination_note":"Zona simulada","destination_department":"Caldas","destination_municipality":"Manizales","estimated_beneficiaries":"24","delivery_channel":"Operador sintético","internal_responsible":"Persona interna sintética","internal_contact":{"value":"interno@example.invalid"},"observations":"Observación sintética"}'::jsonb
+);
+select ok((select intake_id from test_contextual_intake) is not null, 'El intake contextual ejecuta el recorrido transaccional completo');
+select is((select donor_type from public.donation_intakes where id=(select intake_id from test_contextual_intake)), 'empresa', 'Conserva el perfil declarado del donante');
+select is((select estimated_beneficiaries from public.donation_intakes where id=(select intake_id from test_contextual_intake)), 24, 'Beneficiarios estimados quedan separados y privados');
+select is((select declared_estimated_value_cop from public.donation_intake_items where intake_id=(select intake_id from test_contextual_intake)), 84000::numeric, 'El valor estimado queda marcado a nivel de artículo');
+
+select is((select count(*)::integer from public.public_need_projections where published and source_need_id in ('60000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000002')), 2, 'Las dos necesidades base están publicadas');
+select is((select count(*)::integer from public.public_need_map('10000000-0000-0000-0000-000000000001',-75.7,6.1,-75.4,6.4)),1,'El filtro PostGIS devuelve solo el punto público dentro del encuadre');
+select is((select count(*)::integer from public.public_collection_centers('10000000-0000-0000-0000-000000000001')),2,'La proyección pública devuelve dos centros sintéticos sin dirección exacta');
+select is((select count(*)::integer from public.public_donation_projections p join public.donations d on d.id=p.donation_id join public.donation_intakes i on i.id=d.intake_id where i.status <> 'approved'), 0, 'Ningún intake sin aprobar aparece públicamente');
+select ok(public.contains_sensitive_content('Consignar a cuenta de ahorros'), 'Detecta contenido monetario ciudadano');
+select ok(public.contains_sensitive_content('Llámame al 3001234567'), 'Detecta teléfono personal');
+select ok(not public.contains_sensitive_content('Se requieren 20 kits de higiene'), 'Acepta descripción humanitaria segura');
+select ok(not public.contains_sensitive_content('Se requieren cincuenta unidades'), 'No confunde cincuenta con una cuenta bancaria');
+
+select throws_ok(
+  $$ update public.audit_events set action = 'tampered' $$,
+  '42501',
+  'El historial append-only no puede modificarse ni eliminarse',
+  'La auditoría no puede alterarse'
+);
+
+select * from finish();
+rollback;
