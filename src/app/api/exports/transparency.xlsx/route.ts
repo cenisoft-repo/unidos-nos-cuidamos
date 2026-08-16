@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { DEMO_EVENT_ID } from "@/lib/constants";
 import { addDataSheet, createExportWorkbook, workbookResponse } from "@/lib/excel-workbook";
+import { observeRequest } from "@/lib/observability";
 import { databaseUnavailableResponse, firstSupabaseError } from "@/lib/supabase/results";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ type MetricRow = {
 };
 
 export async function GET(request: Request) {
+  const observation = observeRequest(request, "export_transparency_xlsx");
   const publicOrigin = new URL(request.url).origin;
   const supabase = await createClient();
   const results = await Promise.all([
@@ -65,7 +67,7 @@ export async function GET(request: Request) {
     supabase.from("public_metric_snapshots").select("metric_key,value,unit,formula,source_cut_at,timezone,owner_role,dimensions").eq("event_id", DEMO_EVENT_ID).eq("reconciled", true).order("source_cut_at", { ascending: false }),
   ]);
   const queryError = firstSupabaseError(results);
-  if (queryError) return databaseUnavailableResponse("exportacion_transparencia", queryError);
+  if (queryError) return observation.complete(databaseUnavailableResponse("exportacion_transparencia", queryError), "database_unavailable");
   const [{ data: needsData }, { data: donationsData }, { data: centersData }, { data: metricsData }] = results;
 
   const needs = (needsData ?? []) as NeedRow[];
@@ -96,7 +98,7 @@ export async function GET(request: Request) {
   addDataSheet(workbook, {
     name: "Resumen",
     title: "Ruta Solidaria · transparencia",
-    description: `Exportación pública segura · corte ${new Date().toISOString()} · datos 100 % sintéticos`,
+    description: `Exportación pública segura · corte ${new Date().toISOString()}`,
     columns: [
       { header: "Indicador", width: 28, value: (row: typeof summary[number]) => row.metric },
       { header: "Valor", width: 18, value: (row) => row.value, numFmt: "#,##0.0" },
@@ -176,5 +178,5 @@ export async function GET(request: Request) {
     ],
     rows: metrics,
   });
-  return workbookResponse(workbook, "ruta-solidaria-transparencia.xlsx");
+  return observation.complete(await workbookResponse(workbook, "ruta-solidaria-transparencia.xlsx"), "export_ready");
 }

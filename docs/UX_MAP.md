@@ -43,11 +43,11 @@ La persona debe poder responder, sin capacitación:
 | Centros de acopio | Elegir punto compatible | Ver qué recibe | RPC segura, tarjetas, mapa y preselección | ✅ Implementado | Horarios reales requieren política y datos aprobados |
 | Reporte ciudadano | Informar hechos | Enviar a verificación | Categorías visuales y campos privados explícitos | ✅ Implementado parcial | Recorrido multipaso opcional tras pruebas de uso |
 | Ingreso | Acceder por rol | Ingresar | Claro y aislado | ✅ Conservar | Reducir lenguaje técnico secundario |
-| Centro operativo | Decidir qué hacer hoy | Resolver prioridad | Lanzador por rol, KPI y pendientes | ✅ Implementado parcial | Evolucionar recepción rápida por escáner |
-| Recepción | Confirmar custodia | Recibir aporte | Formulario por fila | 🔴 Rediseñar completamente | Buscar/escanear código y una acción primaria |
-| Inventario | Reservar existencia | Asignar lote | Selects densos | 🟠 Rediseñar parcialmente | Tarjetas por lote y compatibilidad visible |
-| Despacho | Crear salida | Despachar | Acción dentro de lista | 🟠 Rediseñar parcialmente | Recorrido por pasos y destino visible |
-| Entrega | Registrar resultado | Confirmar entrega | Acción dentro de lista | 🟠 Rediseñar parcialmente | Captura móvil, resumen y feedback humano |
+| Centro operativo | Decidir qué hacer hoy | Resolver prioridad | Lanzador por rol, KPI y pendientes | ✅ Implementado | Validar con operadores antes de G2 |
+| Recepción | Confirmar custodia | Recibir aporte | Búsqueda por código/categoría, cantidades etiquetadas y centro receptor | ✅ Implementado | Escáner físico requiere dispositivo/política aprobados |
+| Inventario | Reservar existencia | Asignar lote | Tarjetas de lote y necesidades filtradas por categoría/unidad | ✅ Implementado | Validar reglas de compatibilidad con autoridad |
+| Despacho | Crear salida | Despachar | Etapa visible y siguiente acción explícita | ✅ Implementado | Transportador real permanece privado y bloqueado |
+| Entrega | Registrar resultado | Confirmar entrega | Etapa móvil, resultado y validación independiente | ✅ Implementado | Evidencia real requiere consentimiento/antimalware |
 | Evidencias | Probar custodia/resultado | Subir evidencia | Bucket privado sin UI dedicada | 🔴 Rediseñar completamente | Componente antes/en tránsito/entrega con permisos explícitos |
 | Transparencia/impacto | Comprobar cifras | Explorar dashboard o descargar Excel | KPI, barras de cobertura, distribución por estado, tabla equivalente y metodología reproducible | ✅ Implementado | Añadir serie temporal y comparación entre eventos cuando existan cortes suficientes |
 | Exportaciones | Analizar sin perder el contrato de datos | Descargar `.xlsx` | Libro público seguro y libro operacional sujeto a sesión/RLS | ✅ Implementado | Incorporar selector de corte cuando exista historial autorizado |
@@ -111,7 +111,7 @@ La persona debe poder responder, sin capacitación:
 1. ✅ Home humana, catálogo “Hoy hace falta” y acceso universal al rastreo.
 2. ✅ Registro de aporte en cinco pasos y ticket QR.
 3. ✅ Centros de acopio públicos mediante proyección segura.
-4. 🟡 Lanzador operativo implementado; recepción rápida por escáner queda como siguiente incremento local.
+4. ✅ Lanzador, búsqueda de recepción, selección de lote, compatibilidad y etapas logísticas implementados.
 5. ⛔ Evidencias privadas y visualización por etapa permanecen condicionadas a política y consentimiento aprobados.
 
 Este documento se creó antes de modificar los componentes de la nueva iteración, como exige la capa UX/UI de referencia.

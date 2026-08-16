@@ -29,3 +29,16 @@ No se afirma que los riesgos del producto vivo estén contenidos ni que exista p
 - SQL remoto: 0 tablas públicas sin RLS y 0 claves foráneas sin índice. Los avisos genéricos de `SECURITY DEFINER` corresponden a RPC explícitos auditados; Auth mantiene pendiente la protección de contraseñas filtradas.
 
 Veredicto: G1 sandbox apta para demostración controlada local o en preview autorizado. No autoriza G2/G3.
+
+## Revalidación G1 local · 2026-08-15
+
+- Reset completo: 14 migraciones y fixtures sintéticos.
+- Contratos: 94 pgTAP, RLS e idempotencia concurrente verdes.
+- Web: 24 Playwright en escritorio/móvil; unitarias 13; lint, TypeScript y build verdes.
+- Operación: bodega guiada por etapas, compatibilidad categoría/unidad y cola offline validada, limitada y sin PII.
+- Seguridad: Auth sin auto-registro, contraseña robusta, sesiones acotadas, honeypot y cuota local 5/10 min.
+- Continuidad: snapshot con SHA-256 restaurado en 57,1 s y pgTAP repetido.
+- Observabilidad: salud no cacheable, request ID, duración y logs JSON sin cuerpos.
+- Release: workflow CI versionado; no ejecutado remotamente porque este ciclo no autoriza push/despliegue.
+
+Veredicto: trabajo técnico independiente agotado para G1. G2/G3 siguen bloqueadas por el paquete de decisiones en `docs/PILOT_APPROVAL_PACKET.md`.

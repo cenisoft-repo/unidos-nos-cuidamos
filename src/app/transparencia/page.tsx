@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BadgeCheck, Building2, Clock3, Download, Scale, ShieldCheck } from "lucide-react";
-import { TransparencyDashboard, type DashboardNeed } from "@/components/transparency-dashboard";
+import { TransparencyDashboard, type DashboardDonation, type DashboardNeed } from "@/components/transparency-dashboard";
 import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { DEMO_EVENT_ID, labelStatus } from "@/lib/constants";
+import { servesNonProductionData } from "@/lib/environment";
 import { formatDate, numberFormat } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Transparencia" };
@@ -32,6 +33,19 @@ type PublicNeed = {
   unit: string;
 };
 
+type PublicDonation = {
+  public_code: string;
+  attribution: string;
+  kind: string;
+  category: string;
+  verified_quantity: number | null;
+  unit: string | null;
+  reconciled_amount: number | null;
+  currency: string | null;
+  destination_label: string | null;
+  operational_state: string;
+};
+
 const metricNames: Record<string, string> = {
   needs_verified: "Necesidades verificadas",
   units_delivered: "Unidades cubiertas",
@@ -41,7 +55,7 @@ const metricNames: Record<string, string> = {
 
 export default async function TransparencyPage() {
   const supabase = await createClient();
-  const [metricResult, needsResult] = await Promise.all([
+  const [metricResult, needsResult, donationsResult] = await Promise.all([
     supabase
       .from("public_metric_snapshots")
       .select("id,metric_key,value,unit,formula,source_cut_at,timezone,owner_role")
@@ -54,8 +68,14 @@ export default async function TransparencyPage() {
       .eq("event_id", DEMO_EVENT_ID)
       .eq("published", true)
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("public_donation_projections")
+      .select("public_code,attribution,kind,category,verified_quantity,unit,reconciled_amount,currency,destination_label,operational_state")
+      .eq("event_id", DEMO_EVENT_ID)
+      .eq("published", true)
+      .order("updated_at", { ascending: false }),
   ]);
-  assertSupabaseSuccess("transparencia", [metricResult, needsResult]);
+  assertSupabaseSuccess("transparencia", [metricResult, needsResult, donationsResult]);
 
   const allMetrics = (metricResult.data ?? []) as Metric[];
   const metrics = Array.from(
@@ -75,6 +95,18 @@ export default async function TransparencyPage() {
     coveredQuantity: Number(need.covered_quantity),
     unit: need.unit,
   }));
+  const dashboardDonations: DashboardDonation[] = ((donationsResult.data ?? []) as PublicDonation[]).map((donation) => ({
+    publicCode: donation.public_code,
+    attribution: donation.attribution,
+    kind: donation.kind,
+    category: donation.category,
+    verifiedQuantity: donation.verified_quantity === null ? null : Number(donation.verified_quantity),
+    unit: donation.unit,
+    reconciledAmount: donation.reconciled_amount === null ? null : Number(donation.reconciled_amount),
+    currency: donation.currency,
+    destinationLabel: donation.destination_label,
+    operationalState: donation.operational_state,
+  }));
 
   return (
     <>
@@ -83,7 +115,7 @@ export default async function TransparencyPage() {
           <div>
             <p className="eyebrow">Rendición de cuentas reproducible</p>
             <h1>Cifras con fuente,<br />fórmula y corte.</h1>
-            <p className="lead">No confundimos actividad con impacto. Cada métrica pública procede de una proyección conciliada y conserva su método.</p>
+            <p className="lead">No confundimos actividad con impacto. Cada métrica pública procede de un corte conciliado y conserva su método.</p>
             <div className="transparency-actions">
               <Link className="button button-primary" href="/api/exports/transparency.xlsx">
                 <Download size={17} /> Descargar Excel seguro
@@ -91,10 +123,12 @@ export default async function TransparencyPage() {
               <a className="button button-outline" href="#dashboard">Ver dashboard</a>
             </div>
           </div>
-          <aside className="page-aside">
-            <strong>Evento simulado</strong>
-            Los valores son fixtures sintéticos. Demuestran el contrato de transparencia, no una emergencia real.
-          </aside>
+          {servesNonProductionData && (
+            <aside className="page-aside">
+              <strong>Instancia de práctica</strong>
+              Las cifras de esta pantalla no corresponden a una emergencia real.
+            </aside>
+          )}
         </div>
       </section>
 
@@ -115,10 +149,10 @@ export default async function TransparencyPage() {
 
       <section className="section analytics-section" id="dashboard">
         <div className="shell">
-          <TransparencyDashboard needs={dashboardNeeds} />
+          <TransparencyDashboard needs={dashboardNeeds} donations={dashboardDonations} />
           <div className="analytics-export-note">
             <Download size={20} aria-hidden="true" />
-            <div><strong>El mismo corte, listo para analizar.</strong><p>El Excel incluye resumen, necesidades, aportes públicos, centros y metodología. Protege las celdas contra fórmulas inyectadas y excluye datos personales.</p></div>
+            <div><strong>El mismo corte, listo para analizar.</strong><p>Incluye resumen, necesidades, aportes públicos, centros y metodología. Sin datos personales.</p></div>
             <Link className="button button-outline button-small" href="/api/exports/transparency.xlsx">Descargar .xlsx</Link>
           </div>
         </div>
@@ -144,10 +178,10 @@ export default async function TransparencyPage() {
               ))}</tbody>
             </table>
           </div>
-          <p className="form-notice transparency-method-note">Las unidades del fixture pertenecen a categorías distintas y no representan personas únicas. El dashboard compara porcentajes; nunca suma litros, kits y unidades como si fueran equivalentes.</p>
+          <p className="form-notice transparency-method-note">Las unidades pertenecen a categorías distintas y no representan personas únicas. Se comparan porcentajes; nunca se suman litros, kits y unidades como si fueran equivalentes.</p>
           <div className="brand-governance-note">
             <Building2 size={23} aria-hidden="true" />
-            <div><strong>Aliados y marcas bajo autorización</strong><p>La organización reportante se deriva de su membresía verificada. Los logos institucionales y las franjas regionales de referencia solo se publicarán con autorización expresa; este sandbox usa identidad neutral.</p></div>
+            <div><strong>Aliados y marcas bajo autorización</strong><p>La organización reportante se deriva de su membresía verificada. Los logos institucionales solo se publican con autorización expresa.</p></div>
             <ShieldCheck size={23} aria-label="Protección institucional activa" />
           </div>
         </div>

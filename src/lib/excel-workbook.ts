@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { servesNonProductionData } from "./environment";
 
 type ExportCell = ExcelJS.CellValue;
 
@@ -26,12 +27,13 @@ function protectText(value: ExportCell): ExportCell {
 
 export function createExportWorkbook(subject: string) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Ruta Solidaria · sandbox de demostración";
-  workbook.lastModifiedBy = "Ruta Solidaria · sandbox de demostración";
+  const author = servesNonProductionData ? "Ruta Solidaria · datos de práctica" : "Ruta Solidaria";
+  workbook.creator = author;
+  workbook.lastModifiedBy = author;
   workbook.created = new Date();
   workbook.modified = new Date();
   workbook.subject = subject;
-  workbook.company = "Ruta Solidaria · simulación";
+  workbook.company = author;
   workbook.calcProperties.fullCalcOnLoad = true;
   return workbook;
 }
@@ -110,7 +112,7 @@ export function addDataSheet<Row>(
     fitToHeight: 0,
     margins: { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
   };
-  sheet.headerFooter.oddFooter = "Ruta Solidaria · simulación segura · &D &T · Página &P de &N";
+  sheet.headerFooter.oddFooter = `${servesNonProductionData ? "Ruta Solidaria · datos de práctica" : "Ruta Solidaria"} · &D &T · Página &P de &N`;
   return sheet;
 }
 

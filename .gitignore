@@ -2,6 +2,7 @@ node_modules/
 .next/
 .vercel/
 .codex-runtime/
+.local-backups/
 out/
 coverage/
 playwright-report/
@@ -14,3 +15,6 @@ supabase/.branches/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local AI configuration
+.claude/

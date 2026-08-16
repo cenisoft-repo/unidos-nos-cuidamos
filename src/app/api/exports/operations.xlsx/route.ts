@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { DEMO_EVENT_ID } from "@/lib/constants";
 import { addDataSheet, createExportWorkbook, workbookResponse } from "@/lib/excel-workbook";
+import { observeRequest } from "@/lib/observability";
 import { databaseUnavailableResponse, firstSupabaseError } from "@/lib/supabase/results";
 
 export const dynamic = "force-dynamic";
@@ -42,15 +43,16 @@ type NeedRow = { tracking_code: string; category: string; description: string; p
 type LotRow = { lot_code: string; category: string; status: string; quantity_initial: number; unit: string; condition: string; created_at: string };
 type FinanceRow = { public_reference: string; transaction_type: string; amount: number; currency: string; status: string; provider: string; reconciled_at: string | null; created_at: string };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const observation = observeRequest(request, "export_operations_xlsx");
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "Debes iniciar sesión" }, { status: 401 });
+  if (!user) return observation.complete(Response.json({ error: "Debes iniciar sesión" }, { status: 401 }), "auth_required");
 
   const membershipResult = await supabase.from("memberships").select("id").eq("user_id", user.id).eq("event_id", DEMO_EVENT_ID).eq("active", true).limit(1);
-  if (membershipResult.error) return databaseUnavailableResponse("membresia_exportacion_operativa", membershipResult.error);
+  if (membershipResult.error) return observation.complete(databaseUnavailableResponse("membresia_exportacion_operativa", membershipResult.error), "database_unavailable");
   const memberships = membershipResult.data;
-  if (!memberships?.length) return Response.json({ error: "No tienes una membresía activa para este evento" }, { status: 403 });
+  if (!memberships?.length) return observation.complete(Response.json({ error: "No tienes una membresía activa para este evento" }, { status: 403 }), "membership_required");
 
   const results = await Promise.all([
     supabase.from("need_cases").select("tracking_code,category,description,public_location_text,status,priority_score,expires_at,created_at").eq("event_id", DEMO_EVENT_ID).order("created_at", { ascending: false }),
@@ -59,7 +61,7 @@ export async function GET() {
     supabase.from("financial_transactions").select("public_reference,transaction_type,amount,currency,status,provider,reconciled_at,created_at").eq("event_id", DEMO_EVENT_ID).order("created_at", { ascending: false }),
   ]);
   const queryError = firstSupabaseError(results);
-  if (queryError) return databaseUnavailableResponse("exportacion_operativa", queryError);
+  if (queryError) return observation.complete(databaseUnavailableResponse("exportacion_operativa", queryError), "database_unavailable");
   const [{ data: needsData }, { data: intakesData }, { data: lotsData }, { data: financeData }] = results;
 
   const needs = (needsData ?? []) as NeedRow[];
@@ -84,7 +86,7 @@ export async function GET() {
   addDataSheet(workbook, {
     name: "Resumen",
     title: "Ruta Solidaria · exportación operativa",
-    description: `Generada para una membresía autenticada · ${new Date().toISOString()} · sandbox de demostración`,
+    description: `Generada para una membresía autenticada · ${new Date().toISOString()}`,
     columns: [
       { header: "Indicador", width: 28, value: (row: typeof summary[number]) => row.metric },
       { header: "Valor", width: 16, value: (row) => row.value, numFmt: "#,##0" },
@@ -181,5 +183,5 @@ export async function GET() {
     ],
     rows: finances,
   });
-  return workbookResponse(workbook, "ruta-solidaria-operacion.xlsx");
+  return observation.complete(await workbookResponse(workbook, "ruta-solidaria-operacion.xlsx"), "export_ready");
 }

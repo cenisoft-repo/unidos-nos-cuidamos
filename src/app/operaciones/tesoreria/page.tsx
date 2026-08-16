@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { TreasuryConsole } from "@/components/treasury-console";
+import { DEMO_EVENT_ID } from "@/lib/constants";
 
 export const metadata: Metadata = { title: "Tesorería sandbox" };
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default async function TreasuryPage() {
   assertSupabaseSuccess("membresia_tesoreria", [membershipsResult]);
   const roles = new Set((membershipsResult.data ?? []).map((item) => item.role));
   if (!["treasury_requester", "treasury_approver", "event_admin", "auditor"].some((role) => roles.has(role))) redirect("/operaciones");
+  const canReviewMoney = roles.has("treasury_approver") || roles.has("event_admin") || roles.has("auditor");
 
   const results = await Promise.all([
     supabase.from("funds").select("id,name,verified,currency"),
@@ -26,6 +28,10 @@ export default async function TreasuryPage() {
   ]);
   assertSupabaseSuccess("tesoreria", results);
   const [funds, transactions, expenses] = results;
+  const pendingMoney = canReviewMoney
+    ? await supabase.rpc("treasury_pending_money_donations", { p_event_id: DEMO_EVENT_ID })
+    : { data: [], error: null };
+  assertSupabaseSuccess("aportes_monetarios_pendientes", [pendingMoney]);
 
   return (
     <div className="ops-shell">
@@ -34,6 +40,7 @@ export default async function TreasuryPage() {
         funds={(funds.data ?? []) as never[]}
         transactions={(transactions.data ?? []) as never[]}
         expenses={(expenses.data ?? []) as never[]}
+        pendingMoney={(pendingMoney.data ?? []) as never[]}
         userId={user.id}
         canRequest={roles.has("treasury_requester") || roles.has("event_admin")}
         canApprove={roles.has("treasury_approver") || roles.has("event_admin")}

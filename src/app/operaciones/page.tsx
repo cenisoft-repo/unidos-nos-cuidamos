@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { currencyFormat, formatDate, numberFormat } from "@/lib/format";
 import { labelStatus } from "@/lib/constants";
+import { servesNonProductionData } from "@/lib/environment";
 import { StatusPill } from "@/components/status-pill";
 import { IntakeActions, NeedActions } from "@/components/operational-actions";
 import { logout } from "@/app/ingresar/actions";
@@ -31,7 +32,7 @@ export default async function OperationsPage() {
     supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
     supabase.from("memberships").select("role,organization_id,organizations(name)").eq("user_id", user.id).eq("active", true),
     supabase.from("need_cases").select("id,category,description,public_location_text,status,expires_at,priority_score").in("status", ["reported","in_verification","verified"]).order("created_at", { ascending: true }).limit(8),
-    supabase.from("donation_intakes").select("id,tracking_code,kind,status,submitted_at,public_attribution_kind,donation_intake_items(count)").in("status", ["reported","pending_verification","observed"]).order("submitted_at", { ascending: true }).limit(8),
+    supabase.from("donation_intakes").select("id,tracking_code,kind,status,submitted_at,public_attribution_kind,donation_intake_items(count)").in("status", ["reported","pending_verification","observed"]).order("submitted_at", { ascending: false }).limit(8),
     supabase.from("inventory_lots").select("id,lot_code,category,status,quantity_initial,unit,created_at").order("created_at", { ascending: false }).limit(6),
     supabase.from("financial_transactions").select("id,transaction_type,amount,status,public_reference,created_at").eq("status", "reconciled").order("created_at", { ascending: false }).limit(8),
     supabase.from("expense_requests").select("id,amount,purpose,status,created_at").order("created_at", { ascending: false }).limit(8),
@@ -50,8 +51,8 @@ export default async function OperationsPage() {
   const canVerify = roles.has("verifier") || roles.has("event_admin");
 
   return <div className="ops-shell">
-    <div className="ops-header"><div><p className="eyebrow">Centro de mando · Simulación</p><h1>Buenos días, {profileResult.data?.full_name?.split(" ")[0] ?? "equipo"}.</h1><p>{memberships.map((item) => roleNames[item.role] ?? item.role).filter((value,index,array) => array.indexOf(value) === index).join(" · ")}</p></div><div className="ops-actions"><Link className="button button-outline button-small ops-export" href="/api/exports/operations.xlsx"><Download size={15} /> Exportar Excel</Link><div className="ops-user"><div className="ops-user-avatar">{(profileResult.data?.full_name ?? user.email ?? "RS").slice(0,2).toUpperCase()}</div><div><strong>{profileResult.data?.full_name}</strong><small>{user.email}</small></div></div><form action={logout}><button className="button button-outline button-small" aria-label="Cerrar sesión"><LogOut size={15} /></button></form></div></div>
-    <div className="ops-alert"><AlertTriangle size={17} /><strong>Entorno controlado:</strong> todos los datos, actores, fondos y decisiones de esta vista son sintéticos.</div>
+    <div className="ops-header"><div><p className="eyebrow">Centro de mando</p><h1>Buenos días, {profileResult.data?.full_name?.split(" ")[0] ?? "equipo"}.</h1><p>{memberships.map((item) => roleNames[item.role] ?? item.role).filter((value,index,array) => array.indexOf(value) === index).join(" · ")}</p></div><div className="ops-actions"><Link className="button button-outline button-small ops-export" href="/api/exports/operations.xlsx"><Download size={15} /> Exportar Excel</Link><div className="ops-user"><div className="ops-user-avatar">{(profileResult.data?.full_name ?? user.email ?? "RS").slice(0,2).toUpperCase()}</div><div><strong>{profileResult.data?.full_name}</strong><small>{user.email}</small></div></div><form action={logout}><button className="button button-outline button-small" aria-label="Cerrar sesión"><LogOut size={15} /></button></form></div></div>
+    {servesNonProductionData && <div className="ops-alert"><AlertTriangle size={17} /><strong>Instancia de práctica:</strong> los datos, fondos y decisiones de esta vista no son reales.</div>}
     <nav className="ops-subnav" aria-label="Módulos operativos"><Link href="/operaciones">Mando</Link>{(roles.has("warehouse_operator")||roles.has("logistics_operator")||roles.has("event_admin"))&&<Link href="/operaciones/bodega">Bodega y logística</Link>}{(roles.has("treasury_requester")||roles.has("treasury_approver")||roles.has("event_admin")||roles.has("auditor"))&&<Link href="/operaciones/tesoreria">Tesorería</Link>}</nav>
     <section className="ops-launcher" aria-labelledby="ops-launcher-title"><header><div><p className="eyebrow">Acciones rápidas</p><h2 id="ops-launcher-title">¿Qué necesitas hacer ahora?</h2></div><span>Solo aparecen recorridos permitidos por tu rol.</span></header><div className="ops-launcher-grid">
       {canVerify && <Link href="#cola-verificacion"><span><ClipboardCheck size={21} /></span><div><strong>Revisar casos</strong><small>{needs.length + intakes.length} pendientes en la cola</small></div><ArrowRight size={16} /></Link>}

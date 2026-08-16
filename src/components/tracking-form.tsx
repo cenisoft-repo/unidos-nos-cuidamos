@@ -5,6 +5,7 @@ import { ArrowRight, Check, Circle, Clock3, MapPinned, Search, ShieldCheck } fro
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
 import { labelStatus } from "@/lib/constants";
+import { servesNonProductionData } from "@/lib/environment";
 import { StatusPill } from "./status-pill";
 
 type TrackResult = { code: string; record_type: string; safe_status: string; last_update: string; message: string };
@@ -68,9 +69,11 @@ export function TrackingForm({ initialCode = "" }: { initialCode?: string }) {
           <small>Empieza por NEC, APO o DON y tiene 28 caracteres.</small>
         </div>
         <button className="button button-dark button-block" disabled={pending}><Search size={17} /> {pending ? "Consultando…" : "Ver mi recorrido"}</button>
-        <button className="tracking-demo" type="button" onClick={() => { setCode(DEMO_CODE); setError(""); setResult(null); }}>
-          Usar un código de demostración <ArrowRight size={14} />
-        </button>
+        {servesNonProductionData && (
+          <button className="tracking-demo" type="button" onClick={() => { setCode(DEMO_CODE); setError(""); setResult(null); }}>
+            Usar un código de práctica <ArrowRight size={14} />
+          </button>
+        )}
       </form>
 
       {error && <p className="form-error" role="alert" style={{ marginTop: 20 }}>{error}</p>}

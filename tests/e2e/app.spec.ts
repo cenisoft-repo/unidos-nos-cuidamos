@@ -3,6 +3,21 @@ import ExcelJS from "exceljs";
 
 test.describe.configure({ mode: "serial" });
 
+test("salud y cabeceras operativas son verificables", async ({ request }) => {
+  const health = await request.get("/api/health", { headers: { "x-request-id": "e2e-health-check" } });
+  expect(health.status()).toBe(200);
+  expect(health.headers()["cache-control"]).toContain("no-store");
+  expect(health.headers()["x-request-id"]).toBe("e2e-health-check");
+  expect(health.headers()["server-timing"]).toMatch(/app;dur=/);
+  await expect(health.json()).resolves.toMatchObject({ status: "ok", checks: { database: "connected" } });
+
+  const portal = await request.get("/");
+  expect(portal.headers()["x-content-type-options"]).toBe("nosniff");
+  expect(portal.headers()["x-frame-options"]).toBe("DENY");
+  expect(portal.headers()["cross-origin-opener-policy"]).toBe("same-origin");
+  expect(portal.headers()["cross-origin-resource-policy"]).toBe("same-origin");
+});
+
 test("portal público muestra solo proyecciones verificadas", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Ayudar debe sentirse/ })).toBeVisible();
@@ -14,7 +29,9 @@ test("portal público muestra solo proyecciones verificadas", async ({ page }) =
 
 test("mapa filtra necesidades y seguimiento explica el recorrido", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".maplibregl-canvas, .leaflet-container")).toBeVisible({ timeout: 10_000 });
+  // El respaldo cartográfico entra tras un temporizador de 4,5 s y carga su propio motor:
+  // el margen cubre esa ruta cuando el estilo vectorial no está disponible.
+  await expect(page.locator(".maplibregl-canvas, .leaflet-container")).toBeVisible({ timeout: 30_000 });
   const realMapEngine = await page.locator(".maplibregl-canvas, .leaflet-container").first().getAttribute("class");
   expect(realMapEngine).toMatch(/maplibregl-canvas|leaflet-container/);
   await expect(page.getByText("Actualización en vivo", { exact: true })).toBeVisible({ timeout: 10_000 });
@@ -26,7 +43,7 @@ test("mapa filtra necesidades y seguimiento explica el recorrido", async ({ page
   await expect(page.getByText("Kits de higiene familiar").first()).toBeVisible();
 
   await page.goto("/seguimiento");
-  await page.getByRole("button", { name: "Usar un código de demostración" }).click();
+  await page.getByRole("button", { name: "Usar un código de práctica" }).click();
   await page.getByRole("button", { name: "Ver mi recorrido" }).click();
   await expect(page.getByRole("heading", { name: "Publicado" })).toBeVisible();
   await expect(page.getByText("Necesidad verificada", { exact: true })).toBeVisible();
@@ -61,7 +78,7 @@ test("Supabase Auth abre el centro operativo con rol y sin PII pública", async 
   await page.goto("/ingresar");
   await page.getByLabel("Correo").fill("admin@rutasolidaria.local");
   await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
-  await page.getByRole("button", { name: "Ingresar de forma segura" }).click();
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
   await expect(page).toHaveURL(/\/operaciones$/);
   await expect(page.getByRole("heading", { name: /Buenos días, Ana/ })).toBeVisible();
   await expect(page.getByRole("link", { name: "Bodega y logística" })).toBeVisible();
@@ -80,30 +97,97 @@ test("Supabase Auth abre el centro operativo con rol y sin PII pública", async 
   await expect(page.getByText("admin@rutasolidaria.local")).toHaveCount(1);
 });
 
+test("bodega guía recepción, compatibilidad y evidencia bloqueada", async ({ page }) => {
+  await page.goto("/ingresar?next=/operaciones/bodega");
+  await page.getByLabel("Correo").fill("bodega@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await expect(page).toHaveURL(/\/operaciones\/bodega$/);
+
+  await expect(page.getByRole("navigation", { name: "Etapas de bodega y logística" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /01 Recibir/ })).toBeVisible();
+  await page.getByLabel("Buscar aporte, categoría o artículo").fill("Agua");
+  await expect(page.getByRole("heading", { name: /Recepciones pendientes/ })).toBeVisible();
+  await expect(page.getByText("Solo se muestran necesidades con categoría y unidad compatibles.")).toBeVisible();
+  await expect(page.getByText("Evidencia privada", { exact: true })).toBeVisible();
+  await expect(page.getByText(/carga de fotos y documentos aún no está disponible/)).toBeVisible();
+});
+
 test("aporte guiado conserva pasos y genera ticket con QR", async ({ page }) => {
   await page.goto("/ingresar?next=/donar");
   await page.getByLabel("Correo").fill("aliado@rutasolidaria.local");
   await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
-  await page.getByRole("button", { name: "Ingresar de forma segura" }).click();
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
   await expect(page).toHaveURL(/\/donar$/);
 
   await page.getByRole("button", { name: "Agua", exact: true }).click();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await page.getByLabel("¿Qué es?").fill("Botellas selladas para prueba E2E");
-  await page.getByLabel("Cantidad", { exact: true }).fill("12");
-  await page.getByLabel("Unidad", { exact: true }).selectOption("litro");
+  await page.locator("#quantity-0").fill("12");
+  await page.locator("#unit-0").selectOption("litro");
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Destino y entrega" })).toBeVisible();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
-  await page.getByLabel("Nombre de quien reporta").fill("Persona sintética E2E");
+  await page.getByLabel("Nombre del donante (empresa o persona)").fill("Empresa donante sintética E2E");
   await page.getByLabel("Correo de coordinación").fill("e2e@example.local");
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await expect(page.getByText("Se podrá publicar tras verificar")).toBeVisible();
+  await expect(page.getByText("Permanece privado")).toBeVisible();
+  await expect(page.getByText("Nombre legal, correo y teléfono")).toBeVisible();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Confirmar aporte" }).click();
 
   await expect(page.getByRole("heading", { name: "Tu aporte ya tiene una ruta segura." })).toBeVisible();
   await expect(page.getByText(/APO-[A-F0-9]{24}/)).toBeVisible();
   await expect(page.getByText("Escanea para consultar el estado")).toBeVisible();
+});
+
+test("aporte económico pasa de declaración privada a conciliación pública", async ({ page }) => {
+  await page.goto("/ingresar?next=/donar");
+  await page.getByLabel("Correo").fill("aliado@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+
+  await page.getByRole("button", { name: "Aporte económico" }).click();
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.getByLabel("Monto declarado (COP)").fill("275000");
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.getByLabel("Estado declarado del aporte").selectOption("entregada_por_validar");
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.getByLabel("Nombre del donante (empresa o persona)").fill("Empresa monetaria sintética E2E");
+  await page.getByLabel("Correo de coordinación").fill("money-e2e@example.local");
+  await page.getByLabel("¿Cómo quieres aparecer públicamente?").selectOption("organization");
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await expect(page.getByText("Cantidad recibida o monto conciliado")).toBeVisible();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Confirmar aporte" }).click();
+
+  const intakeCode = await page.locator(".ticket-code strong").textContent();
+  expect(intakeCode).toMatch(/APO-[A-F0-9]{24}/);
+
+  await page.goto("/operaciones");
+  if (!page.url().includes("/ingresar")) {
+    await page.getByRole("button", { name: "Cerrar sesión" }).click();
+  }
+  await page.goto("/ingresar");
+  await page.getByLabel("Correo").fill("admin@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+
+  const intakeRow = page.locator(".ops-row").filter({ hasText: intakeCode! });
+  await intakeRow.getByRole("button", { name: "Aprobar" }).click();
+  await page.goto("/operaciones/tesoreria");
+  const moneyRow = page.locator(".ops-row").filter({ hasText: intakeCode! });
+  await expect(moneyRow).toBeVisible();
+  const operationalCode = (await moneyRow.textContent())?.match(/DON-[A-F0-9]{24}/)?.[0];
+  expect(operationalCode).toMatch(/DON-[A-F0-9]{24}/);
+  await moneyRow.getByLabel("Referencia del soporte").fill(`SUPPORT-${operationalCode}`);
+  await moneyRow.getByRole("button", { name: "Conciliar aporte" }).click();
+  await expect(page.getByText("Aporte conciliado y publicado.")).toBeVisible();
+
+  await page.goto("/transparencia");
+  await expect(page.getByRole("heading", { name: "Dashboard de aportes verificados" })).toBeVisible();
+  await expect(page.getByText(operationalCode!, { exact: true })).toBeVisible();
 });
 
 test("portada no desborda en móvil", async ({ page }) => {
@@ -117,6 +201,7 @@ test("portada no desborda en móvil", async ({ page }) => {
 test("dashboard público ofrece filtros, tabla accesible y Excel seguro", async ({ page, request }) => {
   await page.goto("/transparencia");
   await expect(page.getByRole("heading", { name: "Dashboard de cobertura" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard de aportes verificados" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Todas" })).toHaveAttribute("aria-pressed", "true");
   const dashboardTable = page.getByRole("table").first();
   await expect(dashboardTable).toContainText("Agua para albergue temporal");

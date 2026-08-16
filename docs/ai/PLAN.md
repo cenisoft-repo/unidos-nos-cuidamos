@@ -9,9 +9,11 @@
 5. ✓ Dinero sandbox: conciliación → gasto segregado → transparencia.
 6. ✓ Migración adversarial y escenarios A–H reproducibles en SQL.
 
+7. ✓ Endurecimiento G1: antiabuso, Auth, observabilidad, recuperación, offline, CI y runbooks.
+
 ## Criterio de salida
 
-- Cumplido en el entorno local del 14 de agosto de 2026.
+- Cumplido y revalidado en el entorno local del 15 de agosto de 2026.
 
 ## Próximos dos hitos
 

@@ -18,10 +18,15 @@
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
+    "db:backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup-local.ps1",
+    "db:restore:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restore-local.ps1",
     "db:test": "supabase test db",
     "test:rls": "node --env-file=.env.local scripts/verify-rls.mjs",
+    "test:concurrency": "node --env-file=.env.local scripts/verify-intake-concurrency.mjs",
     "db:status": "supabase status",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run test:rls && npm run build"
+    "preflight:local": "node --env-file=.env.local scripts/preflight-local.mjs",
+    "preflight:deploy": "node scripts/preflight-deployment.mjs",
+    "verify": "npm run preflight:local && npm run lint && npm run typecheck && npm run test && npm run db:test && npm run test:rls && npm run test:concurrency && npm run build && npm run test:e2e"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",

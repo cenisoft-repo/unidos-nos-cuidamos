@@ -1,9 +1,54 @@
 import type { Metadata } from "next";
+import { servesNonProductionData } from "@/lib/environment";
 import { login } from "./actions";
 
 export const metadata: Metadata = { title: "Ingreso seguro" };
 
+const PRACTICE_ACCOUNTS = [
+  "admin@rutasolidaria.local",
+  "aliado@rutasolidaria.local",
+  "bodega@rutasolidaria.local",
+  "solicita@rutasolidaria.local",
+  "aprueba@rutasolidaria.local",
+];
+
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
   const params = await searchParams;
-  return <div className="auth-layout"><section className="auth-copy"><div><p className="eyebrow">Acceso operacional</p><h1>Una sola historia.<br />El permiso justo.</h1><p>La membresía determina organización, evento y rol. Las acciones sensibles se vuelven a validar dentro de PostgreSQL.</p></div><p className="auth-note">Sandbox de demostración · no uses credenciales reales · sesiones gestionadas por Supabase Auth</p></section><section className="auth-form-wrap"><form action={login} className="auth-form"><h2>Ingresar</h2><p style={{ color: "var(--muted)" }}>Accede al recorrido que corresponde a tu rol.</p>{params.error && <p className="form-error" role="alert">{params.error}</p>}<input type="hidden" name="next" value={params.next ?? "/operaciones"} /><div className="field"><label htmlFor="email">Correo</label><input id="email" name="email" type="email" autoComplete="email" required defaultValue="admin@rutasolidaria.local" /></div><div className="field"><label htmlFor="password">Contraseña</label><input id="password" name="password" type="password" autoComplete="current-password" required defaultValue="RutaSolidaria2026!" /></div><button className="button button-dark button-block" type="submit">Ingresar de forma segura</button><div className="demo-accounts"><strong>Cuentas del sandbox</strong><code>admin@rutasolidaria.local</code><code>aliado@rutasolidaria.local</code><code>bodega@rutasolidaria.local</code><code>solicita@rutasolidaria.local</code><code>aprueba@rutasolidaria.local</code><p>Contraseña común: <code>RutaSolidaria2026!</code></p></div></form></section></div>;
+
+  return (
+    <div className="auth-layout">
+      <section className="auth-copy">
+        <div>
+          <p className="eyebrow">Acceso operacional</p>
+          <h1>Una sola historia.<br />El permiso justo.</h1>
+          <p>Tu membresía determina la organización, el evento y las acciones disponibles.</p>
+        </div>
+        {servesNonProductionData && <p className="auth-note">Instancia de práctica · no uses credenciales reales</p>}
+      </section>
+
+      <section className="auth-form-wrap">
+        <form action={login} className="auth-form">
+          <h2>Ingresar</h2>
+          <p style={{ color: "var(--muted)" }}>Accede al recorrido que corresponde a tu rol.</p>
+          {params.error && <p className="form-error" role="alert">{params.error}</p>}
+          <input type="hidden" name="next" value={params.next ?? "/operaciones"} />
+          <div className="field">
+            <label htmlFor="email">Correo</label>
+            <input id="email" name="email" type="email" autoComplete="email" required />
+          </div>
+          <div className="field">
+            <label htmlFor="password">Contraseña</label>
+            <input id="password" name="password" type="password" autoComplete="current-password" required />
+          </div>
+          <button className="button button-dark button-block" type="submit">Ingresar</button>
+          {servesNonProductionData && (
+            <div className="demo-accounts">
+              <strong>Cuentas de práctica</strong>
+              {PRACTICE_ACCOUNTS.map((account) => <code key={account}>{account}</code>)}
+            </div>
+          )}
+        </form>
+      </section>
+    </div>
+  );
 }

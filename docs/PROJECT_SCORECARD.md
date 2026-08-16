@@ -11,7 +11,7 @@ Escala: 0 ausente · 1 diseño/maqueta · 2 funcional incompleto · 3 probado ·
 | Intake/needs/especie/inventario/logística/dinero | 3 |
 | Transparencia | 3 |
 | Privacidad/seguridad/auditoría | 3 |
-| Accesibilidad/offline/resiliencia | 2 |
-| Observabilidad/release | 2 |
+| Accesibilidad/offline/resiliencia | 3 |
+| Observabilidad/release | 3 |
 
 Puerta actual: G1 local para demostración controlada. No G2/G3.

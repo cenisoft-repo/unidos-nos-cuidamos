@@ -42,6 +42,11 @@ type MapNeedProjection = NeedProjection & {
 
 export const dynamic = "force-dynamic";
 
+/** Nunca sustituye una métrica ausente por un número: sin corte, no hay cifra. */
+function metricValue(value: number | null | undefined) {
+  return value === null || value === undefined ? "—" : numberFormat.format(Number(value));
+}
+
 export default async function HomePage() {
   const supabase = await createClient();
   const results = await Promise.all([
@@ -77,7 +82,7 @@ export default async function HomePage() {
       <section className="hero human-hero">
         <div className="shell hero-layout">
           <div className="hero-copy">
-            <p className="eyebrow">Unidos nos cuidamos · simulación segura</p>
+            <p className="eyebrow">Unidos nos cuidamos</p>
             <h1>Ayudar debe sentirse <em>simple y claro.</em></h1>
             <p className="lead">Descubre qué hace falta, elige dónde aportar y comprueba el recorrido sin exponer a nadie.</p>
             <div className="hero-actions">
@@ -182,12 +187,12 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="impact-strip" aria-label="Resumen del ejercicio de demostración">
+      <section className="impact-strip" aria-label="Cifras conciliadas">
         <div className="shell live-grid">
-          <div className="live-item intro"><strong>Lo comprobable hoy</strong><span>Datos sintéticos reconciliados en este entorno sandbox.</span></div>
-          <div className="live-item"><strong>{dashboard?.active_needs ?? visibleNeeds.length}</strong><span>necesidades públicas vigentes</span></div>
-          <div className="live-item"><strong>{numberFormat.format(dashboard?.units_delivered ?? 113)}</strong><span>unidades cubiertas por categoría</span></div>
-          <div className="live-item"><strong>{dashboard?.visible_donations ?? 0}</strong><span>aportes visibles y conciliados</span></div>
+          <div className="live-item intro"><strong>Lo comprobable hoy</strong><span>Solo cifras conciliadas contra su corte.</span></div>
+          <div className="live-item"><strong>{metricValue(dashboard?.active_needs)}</strong><span>necesidades públicas vigentes</span></div>
+          <div className="live-item"><strong>{metricValue(dashboard?.units_delivered)}</strong><span>unidades cubiertas por categoría</span></div>
+          <div className="live-item"><strong>{metricValue(dashboard?.visible_donations)}</strong><span>aportes visibles y conciliados</span></div>
         </div>
       </section>
 
@@ -216,10 +221,10 @@ export default async function HomePage() {
             <Link href="/transparencia" className="button button-outline">Ver cifras y metodología</Link>
           </div>
           <div className="assurance-list">
-            <article className="assurance-item"><Eye size={25} /><h3>Solo lo seguro</h3><p>La web pública usa una proyección separada de la operación.</p></article>
+            <article className="assurance-item"><Eye size={25} /><h3>Solo lo seguro</h3><p>Lo público se publica aparte de la operación interna.</p></article>
             <article className="assurance-item"><Database size={25} /><h3>Historia protegida</h3><p>Las correcciones compensan; nunca borran la trazabilidad.</p></article>
             <article className="assurance-item"><BadgeCheck size={25} /><h3>Cifras conciliadas</h3><p>Una promesa todavía no cuenta como recepción ni impacto.</p></article>
-            <article className="assurance-item"><LockKeyhole size={25} /><h3>Acceso mínimo</h3><p>Supabase RLS aísla cada organización, evento y función.</p></article>
+            <article className="assurance-item"><LockKeyhole size={25} /><h3>Acceso mínimo</h3><p>Cada persona accede solo a su organización, evento y función.</p></article>
           </div>
         </div>
       </section>

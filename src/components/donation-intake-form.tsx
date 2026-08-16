@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { createClient } from "@/lib/supabase/client";
+import { toOperationalMessage } from "@/lib/user-errors";
 import { COLOMBIA_DEPARTMENTS, DEMO_EVENT_ID, DONOR_TYPES, ECONOMIC_SECTORS, NEED_CATEGORIES, NORMALIZED_UNITS } from "@/lib/constants";
 import type { PublicCollectionCenter } from "@/lib/public-types";
 import { CategoryIcon } from "./category-icon";
@@ -34,7 +35,7 @@ type Item = {
 };
 
 type DonorDetails = {
-  name: string;
+  legalName: string;
   email: string;
   phone: string;
   attributionKind: string;
@@ -59,14 +60,6 @@ type ReportingContext = {
 const STEP_LABELS = ["Qué donarás", "Cantidad", "Dónde llevarlo", "Tus datos", "Confirmar"];
 const blankItem = (category = ""): Item => ({ category, description: "", quantity: "", unit: "", condition: "sellado", storage_requirement: "ambiente", declared_estimated_value_cop: "" });
 
-function humanizeError(message: string) {
-  const normalized = message.toLowerCase();
-  if (normalized.includes("centro")) return "El centro seleccionado ya no está disponible. Regresa al paso 3 y elige otro.";
-  if (normalized.includes("abierto") || normalized.includes("vencido") || normalized.includes("restring")) return "Uno de los artículos no cumple las condiciones de recepción. Revisa su estado y almacenamiento.";
-  if (normalized.includes("membres") || normalized.includes("autoriz")) return "Tu sesión no tiene permiso para registrar este aporte. Vuelve a ingresar con la cuenta aliada.";
-  return "No pudimos guardar el aporte. Tus datos siguen en pantalla; revisa la información e inténtalo de nuevo.";
-}
-
 export function DonationIntakeForm({
   organizationId,
   organizationName,
@@ -82,11 +75,12 @@ export function DonationIntakeForm({
   const [kind, setKind] = useState<"in_kind" | "money">("in_kind");
   const [items, setItems] = useState<Item[]>([blankItem()]);
   const [declaredAmount, setDeclaredAmount] = useState("");
+  const [declaredStatus, setDeclaredStatus] = useState("comprometida");
   const [preferredLocationId, setPreferredLocationId] = useState(
     centers.some((center) => center.id === initialCenterId) ? (initialCenterId ?? "") : (centers[0]?.id ?? ""),
   );
   const [donor, setDonor] = useState<DonorDetails>({
-    name: "",
+    legalName: "",
     email: "",
     phone: "",
     attributionKind: "anonymous",
@@ -132,9 +126,9 @@ export function DonationIntakeForm({
     if (currentStep === 3 && kind === "in_kind" && !preferredLocationId) return "Selecciona un centro para coordinar la entrega.";
     if (currentStep === 3 && reporting.specificDestination && (!reporting.destinationDepartment || reporting.destinationMunicipality.trim().length < 2)) return "Completa el departamento y el municipio o zona de la destinación específica.";
     if (currentStep === 3 && reporting.estimatedBeneficiaries && Number(reporting.estimatedBeneficiaries) <= 0) return "La estimación de beneficiarios debe ser mayor que cero.";
-    if (currentStep === 4 && donor.name.trim().length < 2) return "Escribe el nombre privado de la persona que reporta.";
+    if (currentStep === 4 && donor.legalName.trim().length < 2) return "Escribe el nombre privado de la empresa o persona donante.";
     if (currentStep === 4 && !/^\S+@\S+\.\S+$/.test(donor.email)) return "Escribe un correo válido para la coordinación privada.";
-    if (currentStep === 4 && donor.attributionKind !== "anonymous" && donor.publicAttribution.trim().length < 2) return "Escribe cómo quieres que aparezca la atribución pública.";
+    if (currentStep === 4 && ["alias", "authorized_name"].includes(donor.attributionKind) && donor.publicAttribution.trim().length < 2) return "Escribe cómo quieres que aparezca la atribución pública.";
     if (currentStep === 4 && donor.attributionKind === "authorized_name" && !donor.attributionAuthorized) return "Confirma que cuentas con autorización para publicar ese nombre.";
     return "";
   }
@@ -171,12 +165,12 @@ export function DonationIntakeForm({
       p_organization_id: organizationId,
       p_kind: kind,
       p_idempotency_key: keyRef.current,
-      p_donor_name_private: donor.name.trim(),
+      p_donor_name_private: donor.legalName.trim(),
       p_contact_private: { email: donor.email.trim(), phone: donor.phone.trim() },
       p_attribution_kind: donor.attributionKind,
-      p_public_attribution: donor.attributionKind === "anonymous" ? "" : donor.publicAttribution.trim(),
+      p_public_attribution: donor.attributionKind === "organization" ? organizationName : donor.attributionKind === "anonymous" ? "" : donor.publicAttribution.trim(),
       p_attribution_authorized: donor.attributionKind === "authorized_name" && donor.attributionAuthorized,
-      p_declared_status: "comprometida",
+      p_declared_status: declaredStatus,
       p_items: payloadItems,
       p_declared_amount: kind === "money" ? Number(declaredAmount) : null,
       p_preferred_location_id: kind === "in_kind" ? preferredLocationId : null,
@@ -196,7 +190,7 @@ export function DonationIntakeForm({
     });
     setPending(false);
     if (submitError) {
-      setError(humanizeError(submitError.message));
+      setError(toOperationalMessage(submitError, "No pudimos guardar el aporte. Tus datos siguen en pantalla; revisa la información e inténtalo de nuevo."));
       return;
     }
     const row = Array.isArray(data) ? data[0] : data;
@@ -246,8 +240,8 @@ export function DonationIntakeForm({
       </ol>
 
       <div className="form-body donation-step-body">
-        {error && <p className="form-error" role="alert">{error}</p>}
-        {stepError && <p className="form-error" role="alert">{stepError}</p>}
+        {error && <p className="form-error" role="alert" aria-live="assertive">{error}</p>}
+        {stepError && <p className="form-error" role="alert" aria-live="assertive">{stepError}</p>}
 
         {step === 1 && (
           <section aria-labelledby="donation-step-title-1">
@@ -269,14 +263,14 @@ export function DonationIntakeForm({
               {items.map((item, index) => (
                 <div className="item-editor" key={index}>
                   <div className="item-editor-top"><strong>Artículo {index + 1} · {item.category || "Sin categoría"}</strong>{items.length > 1 && <button className="text-button" type="button" onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={13} /> Quitar</button>}</div>
-                  <div className="field"><label htmlFor={`description-${index}`}>¿Qué es?</label><input id={`description-${index}`} value={item.description} onChange={(event) => updateItem(index, "description", event.target.value)} placeholder="Ej. botellas de agua selladas de 1 litro" /></div>
-                  <div className="field-grid"><div className="field"><label htmlFor={`quantity-${index}`}>Cantidad</label><input id={`quantity-${index}`} type="number" min="0.001" step="0.001" value={item.quantity} onChange={(event) => updateItem(index, "quantity", event.target.value)} /></div><div className="field"><label htmlFor={`unit-${index}`}>Unidad</label><select id={`unit-${index}`} value={item.unit} onChange={(event) => updateItem(index, "unit", event.target.value)}><option value="" disabled>Selecciona</option>{NORMALIZED_UNITS.map((value) => <option value={value} key={value}>{value}</option>)}</select></div></div>
+                  <div className="field"><label htmlFor={`description-${index}`}>¿Qué es? <span aria-hidden="true">*</span></label><input id={`description-${index}`} value={item.description} onChange={(event) => updateItem(index, "description", event.target.value)} placeholder="Ej. botellas de agua selladas de 1 litro" minLength={3} maxLength={500} required /></div>
+                  <div className="field-grid"><div className="field"><label htmlFor={`quantity-${index}`}>Cantidad <span aria-hidden="true">*</span></label><input id={`quantity-${index}`} type="number" min="0.001" step="0.001" value={item.quantity} onChange={(event) => updateItem(index, "quantity", event.target.value)} required /></div><div className="field"><label htmlFor={`unit-${index}`}>Unidad <span aria-hidden="true">*</span></label><select id={`unit-${index}`} value={item.unit} onChange={(event) => updateItem(index, "unit", event.target.value)} required><option value="" disabled>Selecciona</option>{NORMALIZED_UNITS.map((value) => <option value={value} key={value}>{value}</option>)}</select></div></div>
                   <div className="field"><label htmlFor={`estimated-value-${index}`}>Valor estimado del artículo (COP, opcional)</label><input id={`estimated-value-${index}`} type="number" min="1" step="1" value={item.declared_estimated_value_cop} onChange={(event) => updateItem(index, "declared_estimated_value_cop", event.target.value)} placeholder="Ej. 250000" /><small>Es una referencia declarada: no crea un ingreso financiero ni una cifra pública.</small></div>
                   <div className="field-grid"><div className="field"><label htmlFor={`condition-${index}`}>Estado</label><select id={`condition-${index}`} value={item.condition} onChange={(event) => updateItem(index, "condition", event.target.value)}><option value="sellado">Sellado</option><option value="nuevo">Nuevo</option><option value="abierto">Abierto (no se recibe)</option><option value="vencido">Vencido (no se recibe)</option></select></div><div className="field"><label htmlFor={`storage-${index}`}>Cuidado especial</label><select id={`storage-${index}`} value={item.storage_requirement} onChange={(event) => updateItem(index, "storage_requirement", event.target.value)}><option value="ambiente">Ambiente</option><option value="frio">Cadena de frío</option><option value="seco">Lugar seco</option></select></div></div>
                 </div>
               ))}
               {items.length < 5 && <button className="button button-outline button-small" type="button" onClick={() => setItems((current) => [...current, blankItem(current[0]?.category)])}><Plus size={15} /> Agregar otro artículo</button>}
-            </> : <div className="form-notice"><strong>Este canal no recauda dinero.</strong> Solo registra un aporte administrado por fuera de la plataforma para que tesorería verifique su soporte.<div className="field"><label htmlFor="declared-amount">Monto declarado (COP)</label><input id="declared-amount" type="number" min="1" step="1" value={declaredAmount} onChange={(event) => setDeclaredAmount(event.target.value)} placeholder="Ej. 150000" /></div></div>}
+            </> : <div className="form-notice"><strong>Este canal no recauda dinero.</strong> Solo registra un aporte administrado por fuera de la plataforma para que tesorería verifique su soporte.<div className="field"><label htmlFor="declared-amount">Monto declarado (COP) <span aria-hidden="true">*</span></label><input id="declared-amount" type="number" min="1" step="1" value={declaredAmount} onChange={(event) => setDeclaredAmount(event.target.value)} placeholder="Ej. 150000" required /></div></div>}
           </section>
         )}
 
@@ -287,8 +281,9 @@ export function DonationIntakeForm({
             {kind === "in_kind" ? <><h4 className="form-subheading">Centro preferido</h4><div className="donation-center-options">{centers.map((center) => <button className={preferredLocationId === center.id ? "is-selected" : ""} type="button" aria-pressed={preferredLocationId === center.id} onClick={() => { setPreferredLocationId(center.id); setStepError(""); }} key={center.id}><span className="center-map-icon"><MapPin size={20} /></span><span><strong>{center.name}</strong><small>{center.locationLabel}</small><em>{center.accepts.length ? `Recibe ${center.accepts.join(", ")}` : "Recepción por coordinar"}</em></span>{preferredLocationId === center.id && <CheckCircle2 size={20} />}</button>)}</div></> : <div className="simple-confirmation"><HeartHandshake size={30} /><strong>La verificación económica será remota</strong><span>Tesorería revisará el soporte fuera de esta plataforma. Nunca ingreses tarjetas, claves o cuentas.</span></div>}
             <div className="destination-context">
               <label className="form-check"><input type="checkbox" checked={reporting.specificDestination} onChange={(event) => setReporting({ ...reporting, specificDestination: event.target.checked })} /><span><strong>Este aporte tiene una destinación específica</strong><small>Actívalo solo si ya existe una zona prevista.</small></span></label>
-              {reporting.specificDestination && <><div className="field"><label htmlFor="destination-note">Detalle de la destinación (privado)</label><input id="destination-note" value={reporting.destinationNote} onChange={(event) => setReporting({ ...reporting, destinationNote: event.target.value })} maxLength={240} placeholder="Ej. punto comunitario sintético" /></div><div className="field-grid"><div className="field"><label htmlFor="destination-department">Departamento destino</label><select id="destination-department" value={reporting.destinationDepartment} onChange={(event) => setReporting({ ...reporting, destinationDepartment: event.target.value })}><option value="" disabled>Selecciona</option>{COLOMBIA_DEPARTMENTS.map((department) => <option value={department} key={department}>{department}</option>)}</select></div><div className="field"><label htmlFor="destination-municipality">Municipio o zona destino</label><input id="destination-municipality" value={reporting.destinationMunicipality} onChange={(event) => setReporting({ ...reporting, destinationMunicipality: event.target.value })} maxLength={140} /></div></div></>}
-              <div className="field-grid"><div className="field"><label htmlFor="estimated-beneficiaries">Beneficiarios estimados (opcional)</label><input id="estimated-beneficiaries" type="number" min="1" step="1" value={reporting.estimatedBeneficiaries} onChange={(event) => setReporting({ ...reporting, estimatedBeneficiaries: event.target.value })} /><small>Estimación declarada; nunca se publica como impacto sin validación.</small></div><div className="field"><label htmlFor="delivery-channel">Canal u operador previsto (opcional)</label><input id="delivery-channel" value={reporting.deliveryChannel} onChange={(event) => setReporting({ ...reporting, deliveryChannel: event.target.value })} maxLength={160} placeholder="Ej. transporte aliado sintético" /></div></div>
+              {reporting.specificDestination && <><div className="field"><label htmlFor="destination-note">Detalle de la destinación (privado)</label><input id="destination-note" value={reporting.destinationNote} onChange={(event) => setReporting({ ...reporting, destinationNote: event.target.value })} maxLength={240} placeholder="Ej. punto comunitario del barrio" /></div><div className="field-grid"><div className="field"><label htmlFor="destination-department">Departamento destino</label><select id="destination-department" value={reporting.destinationDepartment} onChange={(event) => setReporting({ ...reporting, destinationDepartment: event.target.value })}><option value="" disabled>Selecciona</option>{COLOMBIA_DEPARTMENTS.map((department) => <option value={department} key={department}>{department}</option>)}</select></div><div className="field"><label htmlFor="destination-municipality">Municipio o zona destino</label><input id="destination-municipality" value={reporting.destinationMunicipality} onChange={(event) => setReporting({ ...reporting, destinationMunicipality: event.target.value })} maxLength={140} /></div></div></>}
+              <div className="field-grid"><div className="field"><label htmlFor="estimated-beneficiaries">Beneficiarios estimados (opcional)</label><input id="estimated-beneficiaries" type="number" min="1" step="1" value={reporting.estimatedBeneficiaries} onChange={(event) => setReporting({ ...reporting, estimatedBeneficiaries: event.target.value })} /><small>Estimación declarada; nunca se publica como impacto sin validación.</small></div><div className="field"><label htmlFor="delivery-channel">Canal u operador previsto (opcional)</label><input id="delivery-channel" value={reporting.deliveryChannel} onChange={(event) => setReporting({ ...reporting, deliveryChannel: event.target.value })} maxLength={160} placeholder="Ej. transporte de un aliado" /></div></div>
+              <div className="field"><label htmlFor="declared-status">Estado declarado del aporte <span aria-hidden="true">*</span></label><select id="declared-status" value={declaredStatus} onChange={(event) => setDeclaredStatus(event.target.value)} required><option value="comprometida">Comprometido</option><option value="en_transito">En tránsito hacia recepción</option><option value="entregada_por_validar">Entregado, pendiente de validar</option></select><small>Es una declaración inicial; el estado operativo cambia solo con evidencia.</small></div>
             </div>
           </section>
         )}
@@ -299,12 +294,13 @@ export function DonationIntakeForm({
             <p className="step-help">La organización reportante se obtiene de tu membresía; no se elige de una lista. Los contactos permanecen privados.</p>
             <p className="form-success organization-derived"><BadgeCheck size={16} /> Reportas como <strong>{organizationName}</strong></p>
             <div className="field-grid"><div className="field"><label htmlFor="donor-type">Tipo de donante (opcional)</label><select id="donor-type" value={reporting.donorType} onChange={(event) => setReporting({ ...reporting, donorType: event.target.value })}><option value="">Sin especificar</option>{DONOR_TYPES.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></div><div className="field"><label htmlFor="economic-sector">Sector económico (opcional)</label><select id="economic-sector" value={reporting.economicSector} onChange={(event) => setReporting({ ...reporting, economicSector: event.target.value })}><option value="">Sin especificar</option>{ECONOMIC_SECTORS.map((sector) => <option value={sector} key={sector}>{sector}</option>)}</select></div></div>
-            <div className="field-grid"><div className="field"><label htmlFor="donor-name">Nombre de quien reporta</label><input id="donor-name" value={donor.name} onChange={(event) => setDonor({ ...donor, name: event.target.value })} autoComplete="name" /></div><div className="field"><label htmlFor="donor-email">Correo de coordinación</label><input id="donor-email" type="email" value={donor.email} onChange={(event) => setDonor({ ...donor, email: event.target.value })} autoComplete="email" /></div></div>
-            <div className="field"><label htmlFor="donor-phone">Teléfono (opcional)</label><input id="donor-phone" type="tel" value={donor.phone} onChange={(event) => setDonor({ ...donor, phone: event.target.value })} autoComplete="tel" /></div>
-            <div className="field-grid"><div className="field"><label htmlFor="internal-responsible">Responsable interno (opcional y privado)</label><input id="internal-responsible" value={reporting.internalResponsible} onChange={(event) => setReporting({ ...reporting, internalResponsible: event.target.value })} maxLength={160} /></div><div className="field"><label htmlFor="internal-contact">Contacto interno (opcional y privado)</label><input id="internal-contact" value={reporting.internalContact} onChange={(event) => setReporting({ ...reporting, internalContact: event.target.value })} maxLength={180} placeholder="Correo o teléfono sintético" /></div></div>
+            <div className="field-grid"><div className="field"><label htmlFor="donor-name">Nombre del donante (empresa o persona) <span aria-hidden="true">*</span></label><input id="donor-name" value={donor.legalName} onChange={(event) => setDonor({ ...donor, legalName: event.target.value })} autoComplete="organization" minLength={2} maxLength={160} required /><small>Se usa para control interno; no se publica por defecto.</small></div><div className="field"><label htmlFor="donor-email">Correo de coordinación <span aria-hidden="true">*</span></label><input id="donor-email" type="email" value={donor.email} onChange={(event) => setDonor({ ...donor, email: event.target.value })} autoComplete="email" maxLength={254} required /></div></div>
+            <div className="field"><label htmlFor="donor-phone">Teléfono (opcional)</label><input id="donor-phone" type="tel" value={donor.phone} onChange={(event) => setDonor({ ...donor, phone: event.target.value })} autoComplete="tel" minLength={7} maxLength={30} /></div>
+            <div className="field-grid"><div className="field"><label htmlFor="internal-responsible">Responsable que registra (opcional y privado)</label><input id="internal-responsible" value={reporting.internalResponsible} onChange={(event) => setReporting({ ...reporting, internalResponsible: event.target.value })} maxLength={160} /><small>Úsalo si quien diligencia no es el donante.</small></div><div className="field"><label htmlFor="internal-contact">Contacto interno (opcional y privado)</label><input id="internal-contact" value={reporting.internalContact} onChange={(event) => setReporting({ ...reporting, internalContact: event.target.value })} maxLength={180} placeholder="Correo o teléfono" /></div></div>
             <div className="field"><label htmlFor="private-observations">Observaciones internas (opcional)</label><textarea id="private-observations" value={reporting.observations} onChange={(event) => setReporting({ ...reporting, observations: event.target.value })} maxLength={2000} placeholder="Condiciones de coordinación que no deben publicarse" /></div>
             <div className="field"><label htmlFor="attribution-kind">¿Cómo quieres aparecer públicamente?</label><select id="attribution-kind" value={donor.attributionKind} onChange={(event) => setDonor({ ...donor, attributionKind: event.target.value })}><option value="anonymous">De forma anónima</option><option value="organization">Como organización</option><option value="alias">Con un alias</option><option value="authorized_name">Con mi nombre autorizado</option></select></div>
-            {donor.attributionKind !== "anonymous" && <div className="field"><label htmlFor="public-attribution">Nombre, organización o alias público</label><input id="public-attribution" value={donor.publicAttribution} onChange={(event) => setDonor({ ...donor, publicAttribution: event.target.value })} maxLength={120} /></div>}
+            {donor.attributionKind === "organization" && <p className="form-success organization-derived"><BadgeCheck size={16} /> La atribución pública será <strong>{organizationName}</strong>.</p>}
+            {["alias", "authorized_name"].includes(donor.attributionKind) && <div className="field"><label htmlFor="public-attribution">Nombre o alias público <span aria-hidden="true">*</span></label><input id="public-attribution" value={donor.publicAttribution} onChange={(event) => setDonor({ ...donor, publicAttribution: event.target.value })} minLength={2} maxLength={120} required /></div>}
             {donor.attributionKind === "authorized_name" && <label className="form-check"><input type="checkbox" checked={donor.attributionAuthorized} onChange={(event) => setDonor({ ...donor, attributionAuthorized: event.target.checked })} /><span>Cuento con autorización expresa para publicar este nombre.</span></label>}
           </section>
         )}
@@ -319,9 +315,14 @@ export function DonationIntakeForm({
               {kind === "in_kind" && <div><dt>Centro preferido</dt><dd>{selectedCenter ? `${selectedCenter.name} · ${selectedCenter.locationLabel}` : "Sin selección"}</dd></div>}
               <div><dt>Destino declarado</dt><dd>{reporting.specificDestination ? `${reporting.destinationDepartment} · ${reporting.destinationMunicipality}${reporting.estimatedBeneficiaries ? ` · ${reporting.estimatedBeneficiaries} beneficiarios estimados` : ""}` : "Sin destinación específica"}</dd></div>
               <div><dt>Perfil del donante</dt><dd>{reporting.donorType ? `${DONOR_TYPES.find(([value]) => value === reporting.donorType)?.[1] ?? reporting.donorType}${reporting.economicSector ? ` · ${reporting.economicSector}` : ""}` : "Sin especificar"}</dd></div>
-              <div><dt>Contacto privado</dt><dd>{donor.name} · {donor.email}</dd></div>
-              <div><dt>Atribución pública</dt><dd>{donor.attributionKind === "anonymous" ? "Anónima" : donor.publicAttribution}</dd></div>
+              <div><dt>Estado declarado</dt><dd>{declaredStatus === "comprometida" ? "Comprometido" : declaredStatus === "en_transito" ? "En tránsito hacia recepción" : "Entregado, pendiente de validar"}</dd></div>
+              <div><dt>Identidad y contacto privados</dt><dd>{donor.legalName} · {donor.email}</dd></div>
+              <div><dt>Atribución pública</dt><dd>{donor.attributionKind === "anonymous" ? "Anónima" : donor.attributionKind === "organization" ? organizationName : donor.publicAttribution}</dd></div>
             </dl>
+            <div className="visibility-review" aria-label="Visibilidad de los datos">
+              <article><strong>Se podrá publicar tras verificar</strong><ul><li>Atribución autorizada o anónima</li><li>Tipo de aporte y categoría</li><li>Cantidad recibida o monto conciliado</li><li>Destino aproximado, estado y evidencia</li></ul></article>
+              <article><strong>Permanece privado</strong><ul><li>Nombre legal, correo y teléfono</li><li>Descripción y valores declarados sin conciliar</li><li>Destino detallado y beneficiarios estimados</li><li>Responsables, canal y observaciones internas</li></ul></article>
+            </div>
             <label className="form-check declaration-check"><input type="checkbox" checked={declarationAccepted} onChange={(event) => { setDeclarationAccepted(event.target.checked); setStepError(""); }} /><span>Declaro que la información es de buena fe y entiendo que esta constancia todavía no acredita recepción, entrega ni beneficio.</span></label>
           </section>
         )}

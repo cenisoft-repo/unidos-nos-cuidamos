@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { toOperationalMessage } from "@/lib/user-errors";
 
 export function IntakeActions({ id }: { id: string }) {
   const router = useRouter();
@@ -12,9 +13,9 @@ export function IntakeActions({ id }: { id: string }) {
   async function decide(decision: "approve" | "observe" | "reject") {
     setPending(decision); setError("");
     const supabase = createClient();
-    const { error: actionError } = await supabase.rpc("review_donation_intake", { p_intake_id: id, p_decision: decision, p_note: decision === "approve" ? "Verificación sandbox satisfactoria" : "Decisión registrada en sandbox" });
+    const { error: actionError } = await supabase.rpc("review_donation_intake", { p_intake_id: id, p_decision: decision, p_note: decision === "approve" ? "Verificación aprobada" : "Decisión registrada" });
     setPending("");
-    if (actionError) { setError(actionError.message); return; }
+    if (actionError) { setError(toOperationalMessage(actionError)); return; }
     router.refresh();
   }
 
@@ -29,9 +30,9 @@ export function NeedActions({ id, status }: { id: string; status: string }) {
   async function decide(decision: "verify" | "publish" | "observe" | "reject") {
     setPending(decision); setError("");
     const supabase = createClient();
-    const { error: actionError } = await supabase.rpc("review_need_case", { p_need_id: id, p_decision: decision, p_note: `Decisión ${decision} ejecutada en sandbox`, p_confidence: decision === "verify" || decision === "publish" ? 75 : null, p_expires_at: null });
+    const { error: actionError } = await supabase.rpc("review_need_case", { p_need_id: id, p_decision: decision, p_note: `Decisión  registrada`, p_confidence: decision === "verify" || decision === "publish" ? 75 : null, p_expires_at: null });
     setPending("");
-    if (actionError) { setError(actionError.message); return; }
+    if (actionError) { setError(toOperationalMessage(actionError)); return; }
     router.refresh();
   }
 

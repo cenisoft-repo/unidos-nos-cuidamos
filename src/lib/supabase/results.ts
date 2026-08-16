@@ -1,3 +1,5 @@
+import { logOperationalEvent } from "@/lib/observability";
+
 type SupabaseErrorLike = {
   code?: string;
   message: string;
@@ -19,7 +21,11 @@ export function assertSupabaseSuccess(context: string, results: readonly Supabas
 }
 
 export function databaseUnavailableResponse(context: string, error: SupabaseErrorLike) {
-  console.error(`[supabase:${context}] consulta no disponible`, { code: error.code ?? "unknown_error" });
+  logOperationalEvent("error", {
+    event: "database_query_unavailable",
+    operation: context,
+    outcome: error.code ?? "unknown_error",
+  });
   return Response.json(
     { error: "No fue posible consultar la información en este momento. Intenta de nuevo en unos minutos." },
     {

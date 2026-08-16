@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CheckCircle2, LoaderCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { toOperationalMessage } from "@/lib/user-errors";
 import { DEMO_EVENT_ID, NEED_CATEGORIES, NORMALIZED_UNITS } from "@/lib/constants";
 import { CategoryIcon } from "./category-icon";
 
@@ -30,10 +31,11 @@ export function ReportNeedForm() {
       p_unit: String(form.get("unit")),
       p_exact_address_private: String(form.get("exact_address") ?? ""),
       p_contact_private: { email: String(form.get("email") ?? "") },
+      p_bot_field: String(form.get("website") ?? ""),
     });
     setPending(false);
     if (submitError) {
-      setError(submitError.message);
+      setError(toOperationalMessage(submitError));
       return;
     }
     const row = Array.isArray(data) ? data[0] : data;
@@ -63,6 +65,7 @@ export function ReportNeedForm() {
       <div className="form-card-header"><h2>Cuéntanos qué está pasando</h2><p>Reporta hechos observables. Nuestro equipo determina prioridad y ruta de atención.</p></div>
       <div className="form-body">
         {error && <p className="form-error" role="alert">{error}</p>}
+        <div className="form-honeypot" aria-hidden="true"><label htmlFor="website">Sitio web</label><input id="website" name="website" tabIndex={-1} autoComplete="off" /></div>
         <p className="form-notice"><strong>¿Hay riesgo vital inmediato?</strong> Contacta a la autoridad de emergencias. Este formulario no despacha rescate ni personal clínico.</p>
         <fieldset className="report-category-fieldset"><legend>¿Qué tipo de ayuda hace falta?</legend><div className="report-category-grid">{NEED_CATEGORIES.map((value) => <label key={value}><input type="radio" name="category" value={value} checked={category === value} onChange={() => setCategory(value)} required /><CategoryIcon category={value} size={22} /><span>{value}</span></label>)}</div></fieldset>
         <div className="field"><label htmlFor="public_location">Zona aproximada</label><input id="public_location" name="public_location" placeholder="Municipio y sector amplio" minLength={4} maxLength={120} required /><small>Usa una referencia amplia; esto puede mostrarse públicamente.</small></div>

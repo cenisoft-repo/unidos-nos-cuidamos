@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 
 export default function ErrorPage({
   error,
@@ -18,18 +18,13 @@ export default function ErrorPage({
     <section className="page-hero">
       <div className="shell page-hero-grid">
         <div>
-          <p className="eyebrow">Conexión temporalmente interrumpida</p>
+          <p className="eyebrow">Información no disponible</p>
           <h1>No mostraremos cifras incompletas.</h1>
-          <p className="lead">La información no pudo verificarse contra la base de datos. Tus acciones no se perdieron; vuelve a intentar cuando la conexión esté disponible.</p>
+          <p className="lead">No pudimos cargar esta información. Tus acciones no se perdieron: vuelve a intentarlo en unos momentos.</p>
           <button className="button button-dark" type="button" onClick={reset}>
             <RotateCcw size={17} /> Reintentar
           </button>
         </div>
-        <aside className="page-aside">
-          <AlertTriangle size={22} />
-          <strong>Falla segura</strong>
-          La plataforma evita reemplazar información ausente por ceros o listas vacías que puedan inducir a error.
-        </aside>
       </div>
     </section>
   );

@@ -263,7 +263,21 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
     const container = mapContainerRef.current;
     if (!container || mapRef.current) return;
 
+    /** Sin WebGL el estilo vectorial nunca carga: pasamos al mapa alternativo sin esperar. */
+    function supportsWebGl() {
+      try {
+        const probe = document.createElement("canvas");
+        return Boolean(probe.getContext("webgl2") ?? probe.getContext("webgl"));
+      } catch {
+        return false;
+      }
+    }
+
     async function initializeMap() {
+      if (!supportsWebGl()) {
+        setMapState("fallback");
+        return;
+      }
       try {
         const maplibregl = await import("maplibre-gl");
         if (cancelled || !container) return;
@@ -288,7 +302,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
           if (!map.loaded()) activateFallback();
         }, 4500);
         map.addControl(new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }), "top-right");
-        map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "OpenFreeMap · © OpenStreetMap · puntos sintéticos" }), "bottom-right");
+        map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "OpenFreeMap · © OpenStreetMap" }), "bottom-right");
 
         map.on("load", () => {
           if (cancelled) return;
@@ -624,7 +638,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
         {mapState === "fallback" && (
           <div className={`${styles.mapFeedback} ${styles.visualFallback}`}>
             <div className={styles.fallbackMapCanvas} ref={fallbackMapContainerRef} />
-            <div className={styles.fallbackNote}><MapPin size={16} /><span><strong>Mapa real compatible</strong>Usamos cartografía OpenStreetMap porque el estilo vectorial o WebGL no estuvo disponible. Los puntos y eventos en vivo siguen activos.</span></div>
+            <div className={styles.fallbackNote}><MapPin size={16} /><span><strong>Mapa alternativo</strong>Estás viendo una versión simplificada del mapa. Los puntos y la actualización en vivo siguen activos.</span></div>
           </div>
         )}
         <div className={styles.mapMeta} aria-hidden="true">
@@ -653,7 +667,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
       <section className={styles.logisticsPanel} aria-labelledby="live-logistics-title">
         <header className={styles.logisticsHeader}>
           <div><p className={styles.kicker}><Route size={13} /> Operación territorial</p><h3 id="live-logistics-title">Acopio y despachos en tiempo real</h3></div>
-          <span><Wifi size={12} /> Eventos Supabase</span>
+          <span><Wifi size={12} /> En vivo</span>
         </header>
         <div className={styles.logisticsGrid}>
           {collectionPoints.map((point) => (
@@ -673,7 +687,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
           {!dispatches.length && <div className={styles.logisticsEmpty}><Truck size={18} /><span><strong>Sin despachos públicos en curso</strong>Cuando bodega cree un despacho hacia una necesidad publicada, la ruta aproximada aparecerá aquí automáticamente.</span></div>}
         </div>
         {activeLogistics?.sourceType === "dispatch" && <p className={styles.logisticsSelection}><strong>{activeLogistics.publicCode}</strong> conecta {activeLogistics.originLabel} con {activeLogistics.destinationLabel}. Estado: {labelStatus(activeLogistics.status)}.</p>}
-        <p className={styles.telemetryNote}><LockKeyhole size={13} /> Actualización en vivo significa eventos de operación publicados por Supabase; no es GPS del vehículo ni muestra rutas, direcciones o personas exactas.</p>
+        <p className={styles.telemetryNote}><LockKeyhole size={13} /> La actualización en vivo refleja movimientos de la operación. No es el GPS de un vehículo ni muestra rutas, direcciones o personas exactas.</p>
       </section>
     </div>
   );

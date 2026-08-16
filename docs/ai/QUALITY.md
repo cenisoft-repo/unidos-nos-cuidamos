@@ -9,7 +9,7 @@
 | Dinero sandbox | 3 | COP 1 M → gasto COP 300 k → saldo COP 700 k |
 | Transparencia | 3 | proyecciones y fórmulas reconciliadas |
 | Privacidad/seguridad/auditoría | 3 | moderación, RLS y eventos inmutables probados |
-| Offline/resiliencia | 2 | cola mínima sin PII + idempotencia DB; cifrado/dispositivo pendiente |
+| Offline/resiliencia | 3 | contrato runtime estricto, TTL 72 h, máximo 50, sin PII, idempotencia DB; política de dispositivo pendiente para G2 |
 | Accesibilidad/responsive | 3 | semántica/teclado y QA 320–1440 sin overflow |
 
-No se recomienda piloto ni producción: offline endurecido, escaneo real, observabilidad, backup/restore y decisiones humanas siguen pendientes.
+No se recomienda piloto ni producción: evidencia/antimalware, infraestructura remota, decisiones humanas y validaciones jurídica/contable/humanitaria siguen pendientes. Observabilidad y backup/restore ya están probados en local, no en un entorno autorizado.

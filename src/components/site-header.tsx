@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Menu, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { servesNonProductionData } from "@/lib/environment";
 import { Logo } from "./logo";
 
 export async function SiteHeader() {
@@ -19,7 +20,7 @@ export async function SiteHeader() {
           <Link href="/seguimiento">Seguimiento</Link>
         </nav>
         <div className="header-actions">
-          <span className="sandbox-flag"><span aria-hidden="true" /> Sandbox de demostración</span>
+          {servesNonProductionData && <span className="sandbox-flag" title="Esta instancia no contiene información operativa real."><span aria-hidden="true" /> Datos de práctica</span>}
           {data.user ? (
             <Link className="button button-dark button-small" href="/operaciones">
               <ShieldCheck size={16} /> Centro operativo

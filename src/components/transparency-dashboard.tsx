@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { numberFormat } from "@/lib/format";
+import { currencyFormat, numberFormat } from "@/lib/format";
 
 export type DashboardNeed = {
   id: string;
@@ -28,9 +28,22 @@ export type DashboardNeed = {
   unit: string;
 };
 
+export type DashboardDonation = {
+  publicCode: string;
+  attribution: string;
+  kind: string;
+  category: string;
+  verifiedQuantity: number | null;
+  unit: string | null;
+  reconciledAmount: number | null;
+  currency: string | null;
+  destinationLabel: string | null;
+  operationalState: string;
+};
+
 const STATUS_COLORS = ["var(--forest-2)", "#236fa1", "var(--sun)", "#9d6046", "var(--muted)"];
 
-export function TransparencyDashboard({ needs }: { needs: DashboardNeed[] }) {
+export function TransparencyDashboard({ needs, donations }: { needs: DashboardNeed[]; donations: DashboardDonation[] }) {
   const [category, setCategory] = useState("Todas");
   const categories = useMemo(() => ["Todas", ...Array.from(new Set(needs.map((need) => need.category)))], [needs]);
   const filtered = useMemo(() => category === "Todas" ? needs : needs.filter((need) => need.category === category), [category, needs]);
@@ -41,6 +54,10 @@ export function TransparencyDashboard({ needs }: { needs: DashboardNeed[] }) {
     remaining: Math.max(0, need.neededQuantity - need.coveredQuantity),
   })), [filtered]);
   const statusData = useMemo(() => Array.from(filtered.reduce((map, need) => map.set(need.statusLabel, (map.get(need.statusLabel) ?? 0) + 1), new Map<string, number>())).map(([name, value]) => ({ name, value })), [filtered]);
+  const donationCategoryData = useMemo(() => Array.from(
+    donations.reduce((map, donation) => map.set(donation.category, (map.get(donation.category) ?? 0) + 1), new Map<string, number>()),
+  ).map(([name, records]) => ({ name, records })), [donations]);
+  const reconciledMoney = useMemo(() => donations.reduce((sum, donation) => sum + (donation.reconciledAmount ?? 0), 0), [donations]);
 
   return (
     <section className="analytics-dashboard" aria-labelledby="analytics-dashboard-title">
@@ -83,6 +100,35 @@ export function TransparencyDashboard({ needs }: { needs: DashboardNeed[] }) {
 
       <div className="analytics-table-wrap">
         <table className="analytics-table"><thead><tr><th>Necesidad</th><th>Estado</th><th>Faltante</th><th>Cobertura</th></tr></thead><tbody>{coverageData.map((need) => <tr key={need.id}><td><strong>{need.category}</strong><span>{need.summary} · {need.locationLabel}</span></td><td>{need.statusLabel}</td><td>{numberFormat.format(need.remaining)} {need.unit}</td><td><strong>{need.coverage} %</strong></td></tr>)}</tbody></table>
+      </div>
+
+      <div className="donation-analytics-head">
+        <div><p className="eyebrow">Aportes con evidencia</p><h2>Dashboard de aportes verificados</h2><p>Cuenta registros por categoría sin sumar litros, kits y unidades incompatibles. El dinero usa únicamente montos conciliados.</p></div>
+        <div className="donation-analytics-kpis"><span><strong>{donations.length}</strong> registros públicos</span><span><strong>{donations.filter((donation) => donation.kind === "in_kind").length}</strong> ítems en especie</span><span><strong>{currencyFormat.format(reconciledMoney)}</strong> conciliados</span></div>
+      </div>
+
+      {donationCategoryData.length ? (
+        <div className="analytics-grid donation-analytics-grid">
+          <article className="chart-panel">
+            <div className="chart-panel-head"><h3>Registros por categoría</h3><span>Conteo de proyecciones verificadas</span></div>
+            <div className="chart-canvas" role="img" aria-label={`Gráfico de barras con ${donationCategoryData.length} categorías de aportes`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={donationCategoryData} margin={{ top: 8, right: 20, bottom: 26, left: 8 }} accessibilityLayer>
+                  <CartesianGrid stroke="var(--line)" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: "var(--muted)", fontSize: 10 }} axisLine={{ stroke: "var(--line)" }} tickLine={false} interval={0} angle={-16} textAnchor="end" />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={(value) => [numberFormat.format(Number(value)), "Registros"]} />
+                  <Bar dataKey="records" name="Registros" fill="var(--forest-2)" radius={[5, 5, 0, 0]} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </article>
+          <article className="chart-panel donation-method-card"><h3>Lectura responsable</h3><p>Una barra representa registros con evidencia, no personas beneficiadas. Las cantidades permanecen junto a su unidad y los montos corresponden exclusivamente a conciliaciones financieras.</p><strong>{donations.filter((donation) => donation.kind === "money").length} aportes económicos conciliados</strong></article>
+        </div>
+      ) : <p className="analytics-empty">Todavía no hay aportes con evidencia suficiente para publicación.</p>}
+
+      <div className="analytics-table-wrap">
+        <table className="analytics-table"><thead><tr><th>Código / atribución</th><th>Categoría</th><th>Verificado</th><th>Destino / estado</th></tr></thead><tbody>{donations.map((donation) => <tr key={donation.publicCode}><td><strong>{donation.publicCode}</strong><span>{donation.attribution}</span></td><td>{donation.category}</td><td>{donation.kind === "money" ? currencyFormat.format(donation.reconciledAmount ?? 0) : `${numberFormat.format(donation.verifiedQuantity ?? 0)} ${donation.unit ?? ""}`}</td><td><strong>{donation.operationalState}</strong><span>{donation.destinationLabel ?? "Destino no publicado"}</span></td></tr>)}</tbody></table>
       </div>
     </section>
   );

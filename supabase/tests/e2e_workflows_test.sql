@@ -1,12 +1,12 @@
 begin;
-select plan(27);
+select plan(34);
 
 -- Escenario C: privacidad y fraude se bloquean antes de persistir.
 select ok(public.contains_sensitive_content('Escríbeme al 300 123 4567'), 'C bloquea teléfono');
 select ok(public.contains_sensitive_content('Consignar a cuenta corriente'), 'C bloquea instrucciones monetarias');
 
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
-select throws_ok($$select * from public.submit_donation_intake('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','in_kind','e2e-f-restricted-001','Persona sintética','{}','anonymous','',false,'comprometida','[{"category":"Salud","description":"Medicamento","quantity":1,"unit":"unidad","condition":"abierto"}]',null)$$,'22023','No se aceptan artículos abiertos o vencidos','F rechaza artículo abierto antes del traslado');
+select throws_ok($$select * from public.submit_donation_intake('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','in_kind','e2e-f-restricted-001','Persona sintética','{"email":"private@example.invalid"}','anonymous','',false,'comprometida','[{"category":"Salud","description":"Medicamento sintético","quantity":1,"unit":"unidad","condition":"abierto","storage_requirement":"ambiente"}]',null,'70000000-0000-0000-0000-000000000002','{}')$$,'22023','No se aceptan artículos abiertos o vencidos','F rechaza artículo abierto antes del traslado');
 
 -- Escenario H/A: aliado autenticado registra dos líneas e idempotencia conserva un ingreso.
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
@@ -14,11 +14,12 @@ create temporary table test_intake as
 select * from public.submit_donation_intake(
   '10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','in_kind','e2e-h-intake-001',
   'Persona sintética','{"email":"private@example.invalid"}','anonymous','',false,'comprometida',
-  '[{"category":"Agua","description":"Botella sellada","quantity":100,"unit":"unidad","condition":"sellado","storage_requirement":"ambiente"},{"category":"Higiene","description":"Kit familiar","quantity":10,"unit":"kit","condition":"nuevo","storage_requirement":"seco"}]'::jsonb,null
+  '[{"category":"Agua","description":"Botella sellada","quantity":100,"unit":"unidad","condition":"sellado","storage_requirement":"ambiente"},{"category":"Higiene","description":"Kit familiar","quantity":10,"unit":"kit","condition":"nuevo","storage_requirement":"seco"}]'::jsonb,null,
+  '70000000-0000-0000-0000-000000000002','{}'::jsonb
 );
 select is((select count(*)::integer from public.donation_intake_items where intake_id=(select intake_id from test_intake)),2,'H crea dos líneas bajo un ingreso');
 select is((select count(*)::integer from public.public_donation_projections p join public.donations d on d.id=p.donation_id where d.intake_id=(select intake_id from test_intake)),0,'H no publica el intake');
-select is((select was_duplicate from public.submit_donation_intake('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','in_kind','e2e-h-intake-001','Persona sintética','{}','anonymous','',false,'comprometida','[]',null)),true,'H reintento idempotente');
+select is((select was_duplicate from public.submit_donation_intake('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','in_kind','e2e-h-intake-001','Persona sintética','{"email":"private@example.invalid"}','anonymous','',false,'comprometida','[{"category":"Agua","description":"Botella sellada","quantity":100,"unit":"unidad","condition":"sellado","storage_requirement":"ambiente"},{"category":"Higiene","description":"Kit familiar","quantity":10,"unit":"kit","condition":"nuevo","storage_requirement":"seco"}]'::jsonb,null,'70000000-0000-0000-0000-000000000002','{}'::jsonb)),true,'H reintento idempotente');
 
 -- Verificador aprueba; bodega recibe 95 y rechaza 5.
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
@@ -63,6 +64,30 @@ select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-00000000
 select is(public.approve_expense((select id from test_expense),'approved','Soporte revisado'),'approved'::public.expense_status,'B actor diferente aprueba gasto');
 select ok(public.pay_expense((select id from test_expense),'e2e-b-payment-001') is not null,'B paga gasto aprobado');
 select is((select sum(case when transaction_type='credit' then amount when transaction_type='debit' then -amount else 0 end) from public.financial_transactions where idempotency_key in ('e2e-b-credit-001','e2e-b-payment-001')),700000::numeric,'B saldo concilia en COP 700.000');
+
+-- Escenario B2: un aporte económico aprobado entra a tesorería y solo entonces se publica.
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
+create temporary table test_money_intake as
+select * from public.submit_donation_intake(
+  '10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','money','e2e-b-money-intake-001',
+  'Empresa donante sintética','{"email":"finance@example.invalid"}','organization','',false,'comprometida','[]'::jsonb,250000,null,
+  '{"donor_type":"empresa","economic_sector":"Tecnología","specific_destination":false,"internal_contact":{}}'::jsonb
+);
+select ok((select intake_id from test_money_intake) is not null,'B2 registra una declaración monetaria privada');
+
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
+create temporary table test_money_donation as
+select public.review_donation_intake((select intake_id from test_money_intake),'approve','Soporte declarado listo para tesorería') as id;
+select ok((select id from test_money_donation) is not null,'B2 aprobación crea la promesa monetaria operacional');
+
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000105","role":"authenticated"}',true);
+select is((select count(*)::integer from public.treasury_pending_money_donations('10000000-0000-0000-0000-000000000001') where donation_id=(select id from test_money_donation)),1,'B2 tesorería ve la promesa sin datos privados del donante');
+create temporary table test_money_transaction as
+select * from public.reconcile_money_donation((select id from test_money_donation),'80000000-0000-0000-0000-000000000001','provider-money-e2e-001','e2e-b-money-reconcile-001');
+select ok((select transaction_id from test_money_transaction) is not null,'B2 conciliación crea el movimiento financiero vinculado');
+select is((select amount from public.financial_transactions where donation_id=(select id from test_money_donation)),250000::numeric,'B2 usa el monto aprobado y no un monto digitado por tesorería');
+select is((select reconciled_amount from public.public_donation_projections where donation_id=(select id from test_money_donation) and published),250000::numeric,'B2 publica el monto únicamente después de conciliarlo');
+select is((select was_duplicate from public.reconcile_money_donation((select id from test_money_donation),'80000000-0000-0000-0000-000000000001','provider-money-e2e-001','e2e-b-money-reconcile-001')),true,'B2 reintento de conciliación devuelve el mismo resultado sin duplicar');
 
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
 create temporary table test_self_expense as select public.request_expense('80000000-0000-0000-0000-000000000001',1000,'Gasto de autoverificación sintético') as id;

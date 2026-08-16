@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LockKeyhole } from "lucide-react";
+import { servesNonProductionData } from "@/lib/environment";
 import { Logo } from "./logo";
 
 export function SiteFooter() {
@@ -23,7 +24,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="shell footer-bottom">
-        <span>Prototipo funcional con información 100 % sintética.</span>
+        <span>{servesNonProductionData ? "Instancia de práctica: la información no corresponde a operaciones reales." : "Unidos nos cuidamos"}</span>
         <span>Colombia · America/Bogota</span>
       </div>
     </footer>
