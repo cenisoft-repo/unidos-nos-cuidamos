@@ -24,9 +24,11 @@
     "test:rls": "node --env-file=.env.local scripts/verify-rls.mjs",
     "test:concurrency": "node --env-file=.env.local scripts/verify-intake-concurrency.mjs",
     "db:status": "supabase status",
+    "audit:a11y": "node scripts/accessibility-audit.mjs",
+    "audit:visual": "node scripts/visual-metrics.mjs",
     "preflight:local": "node --env-file=.env.local scripts/preflight-local.mjs",
     "preflight:deploy": "node scripts/preflight-deployment.mjs",
-    "verify": "npm run preflight:local && npm run lint && npm run typecheck && npm run test && npm run db:test && npm run test:rls && npm run test:concurrency && npm run build && npm run test:e2e"
+    "verify": "npm run preflight:local && npm run lint && npm run typecheck && npm run test && npm run db:test && npm run test:rls && npm run test:concurrency && npm run build && npm run db:reset && npm run test:e2e"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",

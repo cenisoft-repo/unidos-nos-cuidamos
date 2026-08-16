@@ -132,8 +132,9 @@ export default async function TransparencyPage() {
         </div>
       </section>
 
-      <section className="section section-white">
+      <section className="section section-white" aria-labelledby="metricas-title">
         <div className="shell">
+          <h2 id="metricas-title" className="visually-hidden">Métricas conciliadas</h2>
           <div className="transparency-grid">
             {metrics.filter((metric) => metric.metric_key !== "reconciled_balance").slice(0, 3).map((metric, index) => (
               <article className="transparency-metric" key={metric.id}>

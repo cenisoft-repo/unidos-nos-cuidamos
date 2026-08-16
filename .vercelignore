@@ -1,0 +1,26 @@
+# Runtime / tooling local
+.codex-runtime/
+.claude/
+
+# Supabase local runtime/cache
+supabase/.temp/
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+coverage/
+test-results/
+playwright-report/
+
+# Local temp/cache
+tmp/
+temp/
+.cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
