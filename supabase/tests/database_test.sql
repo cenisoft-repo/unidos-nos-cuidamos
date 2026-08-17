@@ -1,5 +1,5 @@
 begin;
-select plan(147);
+select plan(154);
 
 select is((
   select count(*)::integer
@@ -580,6 +580,23 @@ select is(
    from public.financial_transactions where event_id='10000000-0000-0000-0000-000000000001' and status='reconciled'),
   'El saldo es créditos menos egresos sobre el libro completo'
 );
+
+-- G-021: la superficie privada de las necesidades no es legible por columna directa y solo
+-- verificación/administración obtiene el detalle privado mediante la RPC mínima.
+select ok(not has_column_privilege('authenticated','public.need_cases','exact_address_private','SELECT'), 'La dirección exacta de la necesidad no es legible por columna directa');
+select ok(not has_column_privilege('authenticated','public.need_cases','contact_private','SELECT'), 'El contacto privado de la necesidad no es legible por columna directa');
+select ok(not has_column_privilege('authenticated','public.need_cases','operational_location','SELECT'), 'La ubicación operativa exacta no es legible por columna directa');
+select ok(has_column_privilege('authenticated','public.need_cases','public_location_text','SELECT'), 'La zona pública de la necesidad sigue siendo legible');
+select ok(not has_function_privilege('anon','public.need_case_private_detail(uuid)','EXECUTE'), 'El visitante no consulta el detalle privado de la necesidad');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
+select throws_ok(
+  $$ select * from public.need_case_private_detail('60000000-0000-0000-0000-000000000001') $$,
+  '42501',
+  'Solo verificación o administración del evento puede ver los datos privados de la necesidad',
+  'El aliado reportante no accede a los datos privados de la necesidad'
+);
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
+select is((select count(*)::integer from public.need_case_private_detail('60000000-0000-0000-0000-000000000001')), 1, 'La verificación autorizada obtiene el detalle privado de la necesidad');
 
 select * from finish();
 rollback;
