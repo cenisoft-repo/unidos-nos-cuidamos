@@ -1,5 +1,5 @@
 begin;
-select plan(155);
+select plan(159);
 
 select is((
   select count(*)::integer
@@ -579,6 +579,20 @@ select is(
   (select coalesce(sum(case when transaction_type='credit' then amount else -amount end),0)
    from public.financial_transactions where event_id='10000000-0000-0000-0000-000000000001' and status='reconciled'),
   'El saldo es créditos menos egresos sobre el libro completo'
+);
+
+-- G-024: la verificación asigna una coordenada pública aproximada moderada al publicar un
+-- reporte y este aparece en el mapa con esa coordenada (nunca la dirección exacta).
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
+select public.review_need_case('60000000-0000-0000-0000-000000000002','publish','Publicación con ubicación aproximada',85,null,3.451234,-76.531987);
+select is((select public_latitude from public.need_cases where id='60000000-0000-0000-0000-000000000002'), 3.451::numeric, 'La coordenada pública de la necesidad se modera a ~110 m (3 decimales)');
+select is((select latitude from public.public_need_projections where source_need_id='60000000-0000-0000-0000-000000000002'), 3.451::numeric, 'La proyección pública toma la coordenada aprobada por la verificación');
+select is((select count(*)::integer from public.public_need_map('10000000-0000-0000-0000-000000000001') where id=(select id from public.public_need_projections where source_need_id='60000000-0000-0000-0000-000000000002')), 1, 'El reporte publicado con coordenada aprobada aparece en el mapa');
+select throws_ok(
+  $$ select public.review_need_case('60000000-0000-0000-0000-000000000002','publish','coordenada incompleta',85,null,3.45,null) $$,
+  '22023',
+  'Proporciona latitud y longitud aproximadas juntas o ninguna',
+  'Una coordenada aproximada incompleta se rechaza'
 );
 
 -- G-021: la superficie privada de las necesidades no es legible por columna directa y solo

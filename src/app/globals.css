@@ -568,6 +568,11 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .field > input + .field-counter, .field > textarea + .field-counter { display: block; margin-top: 4px; text-align: right; }
 .delivery-category-count { margin-left: 6px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: normal; text-transform: none; }
 .field-public-note { color: #7a4a12; font-weight: 700; }
+.need-coord-fields { margin-top: 8px; }
+.need-coord-fields > label { display: block; font-size: 10px; font-weight: 800; color: var(--muted); }
+.need-coord-inputs { display: flex; gap: 6px; margin: 4px 0; }
+.need-coord-inputs input { width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 11px; }
+.need-coord-fields small { color: var(--muted); font-size: 9px; }
 
 /* Asistente de ubicación: búsqueda de dirección y «mi ubicación» para rellenar coordenadas. */
 .location-assistant { margin-top: 2px; padding: 12px 13px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f8faf7; }
