@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(37);
 
 -- Escenario C: privacidad y fraude se bloquean antes de persistir.
 select ok(public.contains_sensitive_content('Escríbeme al 300 123 4567'), 'C bloquea teléfono');
@@ -55,6 +55,13 @@ select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-00000000
 select ok(public.validate_delivery((select id from test_delivery),'Confirmación sintética') is not null,'A valida la entrega por rol separado');
 select is((select quantity_covered from public.need_items where id='61000000-0000-0000-0000-000000000001'),178::numeric,'A cobertura aumenta exactamente en 89');
 select is((select count(*)::integer from public.public_donation_projections p join public.donations d on d.id=p.donation_id where d.intake_id=(select intake_id from test_intake) and p.published),1,'H solo publica después de entrega validada');
+-- G-023: el mismo QR APO-* no se congela en «aporte reportado»; muestra el recorrido
+-- operacional (recepción/despacho/entrega) de la donación DON-* vinculada.
+select ok(
+  (select count(*) from public.track_public_journey((select tracking_code from test_intake))
+   where stage_key in ('stock_received','shipment_dispatched','delivery_registered','delivery_validated')) >= 1,
+  'El mismo QR del APO muestra el recorrido operacional de su donación vinculada'
+);
 
 -- Escenario F: un hold impide asignar o despachar.
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}',true);
