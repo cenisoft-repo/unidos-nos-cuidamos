@@ -1,5 +1,5 @@
 begin;
-select plan(154);
+select plan(155);
 
 select is((
   select count(*)::integer
@@ -597,6 +597,15 @@ select throws_ok(
 );
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
 select is((select count(*)::integer from public.need_case_private_detail('60000000-0000-0000-0000-000000000001')), 1, 'La verificación autorizada obtiene el detalle privado de la necesidad');
+
+-- G-025: la auditoría de tablas hijas hereda el evento del padre y no deja registros huérfanos.
+select is(
+  (select count(*)::integer from public.audit_events
+   where entity_table in ('need_verifications','intake_verification_decisions','receipts','deliveries','expense_approvals','expense_payments')
+     and event_id is null),
+  0,
+  'La auditoría de tablas hijas conserva el evento derivado del padre'
+);
 
 select * from finish();
 rollback;
