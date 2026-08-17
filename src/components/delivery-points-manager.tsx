@@ -69,9 +69,10 @@ type GeocodeResult = {
   };
 };
 
-// Las coordenadas públicas son aproximadas: se redondean para no revelar el punto exacto.
-function approximateCoordinate(value: number) {
-  return (Math.round(value * 1e4) / 1e4).toString();
+// Coordenada del punto con precisión ~1 m (5 decimales): ubica el acopio donde realmente
+// está, sin arrastrar los decimales espurios del geolocalizador o del buscador.
+function formatCoordinate(value: number) {
+  return (Math.round(value * 1e5) / 1e5).toString();
 }
 
 // Etiqueta pública de zona a partir del resultado, sin publicar la dirección exacta.
@@ -213,7 +214,7 @@ export function DeliveryPointsManager({
   }
 
   function applyCoordinates(latitude: number, longitude: number) {
-    change({ latitude: approximateCoordinate(latitude), longitude: approximateCoordinate(longitude) });
+    change({ latitude: formatCoordinate(latitude), longitude: formatCoordinate(longitude) });
   }
 
   // Ubicación del dispositivo (permiso del navegador). Solo rellena las coordenadas
@@ -229,7 +230,7 @@ export function DeliveryPointsManager({
       (position) => {
         applyCoordinates(position.coords.latitude, position.coords.longitude);
         setGeoResults([]);
-        setGeoNote("Coordenadas tomadas de tu ubicación. Revísalas y completa la dirección exacta privada.");
+        setGeoNote("Coordenadas tomadas de tu ubicación. Revísalas y completa la dirección exacta.");
         setGeoPending(false);
       },
       () => {
@@ -274,8 +275,8 @@ export function DeliveryPointsManager({
   // (sin sobrescribir lo que el usuario ya escribió en la zona).
   function pickResult(result: GeocodeResult) {
     change({
-      latitude: approximateCoordinate(Number(result.lat)),
-      longitude: approximateCoordinate(Number(result.lon)),
+      latitude: formatCoordinate(Number(result.lat)),
+      longitude: formatCoordinate(Number(result.lon)),
       exactAddress: result.display_name.slice(0, ADDRESS_MAX),
       publicLocation: form.publicLocation.trim() || publicZoneFromResult(result).slice(0, LOCATION_MAX),
     });
@@ -392,7 +393,7 @@ export function DeliveryPointsManager({
     </section>
 
     <form className="ops-panel delivery-point-form" id="delivery-point-form" onSubmit={submit}>
-      <header className="ops-panel-header"><div><h2>{form.id ? "Editar punto" : "Crear punto"}</h2><p>Los campos públicos se muestran en el mapa y al registrar aportes. La dirección exacta permanece privada.</p></div></header>
+      <header className="ops-panel-header"><div><h2>{form.id ? "Editar punto" : "Crear punto"}</h2><p>Los campos públicos se muestran en el mapa y al registrar aportes. En un punto que recibe aportes, la dirección exacta se publica como ubicación del acopio.</p></div></header>
       <div className="delivery-point-form-body">
         {error && <p className="form-error" role="alert">{error}</p>}
         {message && <p className="form-success" role="status"><CheckCircle2 size={16} /> {message}</p>}
@@ -406,13 +407,13 @@ export function DeliveryPointsManager({
             <button className="button button-outline button-small" type="button" onClick={searchAddress} disabled={geoPending}>{geoPending ? <LoaderCircle className="spin" size={14} /> : <Search size={14} />} Buscar</button>
             <button className="button button-outline button-small" type="button" onClick={useMyLocation} disabled={geoPending}><LocateFixed size={14} /> Mi ubicación</button>
           </div>
-          <small>Rellena las coordenadas aproximadas y la dirección exacta privada. Siempre revisa antes de guardar.</small>
+          <small>Rellena las coordenadas y la dirección exacta del punto. Verifica siempre antes de guardar.</small>
           {geoNote && <p className="location-assistant-note" role="status">{geoNote}</p>}
           {geoResults.length > 0 && <ul className="location-results">{geoResults.map((result, index) => <li key={`${result.lat}-${result.lon}-${index}`}><button type="button" onClick={() => pickResult(result)}><MapPin size={13} aria-hidden="true" /> {result.display_name}</button></li>)}</ul>}
         </div>
-        <div className="field"><label htmlFor="point-exact-address">Dirección exacta privada <span aria-hidden="true">*</span></label><input id="point-exact-address" value={form.exactAddress} onChange={(event) => change({ exactAddress: event.target.value })} minLength={5} maxLength={ADDRESS_MAX} placeholder="Visible solo para el equipo autorizado" required /><small className="field-counter">{form.exactAddress.length}/{ADDRESS_MAX}</small></div>
+        <div className="field"><label htmlFor="point-exact-address">Dirección exacta <span aria-hidden="true">*</span></label><input id="point-exact-address" value={form.exactAddress} onChange={(event) => change({ exactAddress: event.target.value })} minLength={5} maxLength={ADDRESS_MAX} placeholder={form.acceptsDonations ? "Se mostrará como ubicación pública del acopio" : "Visible solo para el equipo autorizado"} required /><small className={form.acceptsDonations ? "field-public-note" : undefined}>{form.acceptsDonations ? "Este punto recibe aportes: esta dirección se mostrará públicamente como ubicación del acopio." : "Visible solo para el equipo autorizado."} <span className="field-counter">{form.exactAddress.length}/{ADDRESS_MAX}</span></small></div>
         <div className="field"><label htmlFor="point-public-instructions">Instrucciones públicas (opcional)</label><textarea id="point-public-instructions" value={form.publicInstructions} onChange={(event) => change({ publicInstructions: event.target.value })} maxLength={INSTRUCTIONS_MAX} placeholder="Ej. Coordina el horario después de recibir tu código APO." /><small>Sin teléfonos personales, nombres de personas ni dirección exacta. <span className="field-counter">{form.publicInstructions.length}/{INSTRUCTIONS_MAX}</span></small></div>
-        <div className="field-grid"><div className="field"><label htmlFor="point-latitude">Latitud aproximada <span aria-hidden="true">*</span></label><input id="point-latitude" type="number" min="-4.5" max="13.5" step="0.0001" value={form.latitude} onChange={(event) => change({ latitude: event.target.value })} required /></div><div className="field"><label htmlFor="point-longitude">Longitud aproximada <span aria-hidden="true">*</span></label><input id="point-longitude" type="number" min="-82" max="-66.5" step="0.0001" value={form.longitude} onChange={(event) => change({ longitude: event.target.value })} required /></div></div>
+        <div className="field-grid"><div className="field"><label htmlFor="point-latitude">Latitud <span aria-hidden="true">*</span></label><input id="point-latitude" type="number" min="-4.5" max="13.5" step="any" value={form.latitude} onChange={(event) => change({ latitude: event.target.value })} required /></div><div className="field"><label htmlFor="point-longitude">Longitud <span aria-hidden="true">*</span></label><input id="point-longitude" type="number" min="-82" max="-66.5" step="any" value={form.longitude} onChange={(event) => change({ longitude: event.target.value })} required /></div></div>
         <fieldset className="delivery-purpose-fieldset">
           <legend>¿Para qué sirve este punto? <span aria-hidden="true">*</span></legend>
           <label className="form-check"><input type="checkbox" checked={form.acceptsDonations} onChange={(event) => change({ acceptsDonations: event.target.checked })} /><span><strong>Centro de acopio</strong><small>Recibe aportes. Aparece en el mapa público y en el paso «Punto de entrega» del aliado.</small></span></label>

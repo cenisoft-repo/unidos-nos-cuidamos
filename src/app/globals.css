@@ -567,6 +567,7 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .field-counter { color: var(--muted); font-size: 9px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .field > input + .field-counter, .field > textarea + .field-counter { display: block; margin-top: 4px; text-align: right; }
 .delivery-category-count { margin-left: 6px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: normal; text-transform: none; }
+.field-public-note { color: #7a4a12; font-weight: 700; }
 
 /* Asistente de ubicación: búsqueda de dirección y «mi ubicación» para rellenar coordenadas. */
 .location-assistant { margin-top: 2px; padding: 12px 13px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f8faf7; }

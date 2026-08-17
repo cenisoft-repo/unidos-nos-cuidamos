@@ -167,7 +167,7 @@ export default async function HomePage() {
           <div className="section-heading map-heading">
             <p className="eyebrow">Mapa territorial</p>
             <h2>Explora dónde puedes ayudar</h2>
-            <p>Los puntos muestran zonas aproximadas. El azul identifica centros de acopio; los demás colores, necesidades.</p>
+            <p>El azul identifica centros de acopio en su dirección real; los demás colores señalan necesidades en zona aproximada.</p>
           </div>
           <CoverageExplorer eventId={EVENT_ID} needs={mappedNeeds} centers={centers} logistics={logistics} />
         </div>

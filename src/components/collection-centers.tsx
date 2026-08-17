@@ -19,7 +19,7 @@ export function CollectionCenters({ centers }: { centers: PublicCollectionCenter
             {center.accepts.map((category) => <span key={category}><CheckCircle2 size={12} /> {category}</span>)}
             {center.coldChainCapable && <span><Snowflake size={12} /> Cadena de frío</span>}
           </div>
-          <p className="center-privacy">La ubicación es aproximada. La coordinación autorizada comparte los detalles de entrega.</p>
+          <p className="center-privacy">Dirección pública del punto de acopio. Confirma el horario con la coordinación autorizada.</p>
           <Link className="button button-outline button-block" href={`/donar?centro=${center.id}`}>Elegir este centro <ArrowRight size={15} /></Link>
         </article>
       )) : (

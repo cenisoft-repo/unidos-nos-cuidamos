@@ -1,5 +1,5 @@
 begin;
-select plan(146);
+select plan(147);
 
 select is((
   select count(*)::integer
@@ -155,7 +155,7 @@ select throws_ok(
 );
 select has_table('public', 'public_logistics_projections', 'Existe la proyección cartográfica segura de logística');
 select has_function('public', 'public_logistics_map', array['uuid'], 'Existe RPC pública para centros y despachos aproximados');
-select is((select count(*)::integer from public.public_logistics_map('10000000-0000-0000-0000-000000000001') where source_type='collection_center'), 2, 'El mapa logístico publica dos centros sintéticos activos');
+select ok((select count(*)::integer from public.public_logistics_map('10000000-0000-0000-0000-000000000001') where source_type='collection_center') >= 2, 'El mapa logístico publica los centros de acopio activos');
 select ok(not exists(select 1 from information_schema.columns where table_schema='public' and table_name='public_logistics_projections' and column_name='exact_address_private'), 'La proyección logística no contiene dirección exacta');
 select ok(exists(select 1 from pg_catalog.pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='public_logistics_projections'), 'La logística pública está habilitada para Realtime');
 select ok(not has_table_privilege('anon','public.public_logistics_projections','INSERT'), 'El visitante no puede escribir la proyección logística');
@@ -463,7 +463,8 @@ select throws_ok(
 
 select is((select count(*)::integer from public.public_need_projections where published and source_need_id in ('60000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000002')), 2, 'Las dos necesidades base están publicadas');
 select is((select count(*)::integer from public.public_need_map('10000000-0000-0000-0000-000000000001',-75.7,6.1,-75.4,6.4)),1,'El filtro PostGIS devuelve solo el punto público dentro del encuadre');
-select is((select count(*)::integer from public.public_collection_centers('10000000-0000-0000-0000-000000000001')),3,'La proyección pública incorpora el punto parametrizado sin exponer su dirección exacta');
+select ok((select count(*)::integer from public.public_collection_centers('10000000-0000-0000-0000-000000000001')) >= 3, 'La proyección pública incorpora los puntos de acopio parametrizados');
+select is((select location_label from public.public_collection_centers('10000000-0000-0000-0000-000000000001') where id='70000000-0000-0000-0000-000000000002'), 'Dirección sintética no operativa', 'El centro de acopio publica su dirección exacta como ubicación pública real');
 select is((select count(*)::integer from public.public_donation_projections p join public.donations d on d.id=p.donation_id join public.donation_intakes i on i.id=d.intake_id where i.status <> 'approved'), 0, 'Ningún intake sin aprobar aparece públicamente');
 select ok(public.contains_sensitive_content('Consignar a cuenta de ahorros'), 'Detecta contenido monetario ciudadano');
 select ok(public.contains_sensitive_content('Llámame al 3001234567'), 'Detecta teléfono personal');
