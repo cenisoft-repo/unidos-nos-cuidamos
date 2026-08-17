@@ -1,5 +1,8 @@
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL || "https://tiles.openfreemap.org/styles/liberty";
 const RASTER_TILE_URL = process.env.NEXT_PUBLIC_RASTER_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+// Geocodificador para el asistente de dirección de los puntos de entrega (búsqueda por
+// texto). Configurable; por defecto Nominatim de OpenStreetMap.
+const GEOCODER_URL = process.env.NEXT_PUBLIC_GEOCODER_URL || "https://nominatim.openstreetmap.org/search";
 
 /** Devuelve el origen de una URL configurada, o nada si no es utilizable. */
 function origin(value: string | undefined) {
@@ -25,6 +28,7 @@ export function contentSecurityPolicy(nonce: string, { development = false } = {
   const supabaseSocket = supabase ? supabase.replace(/^http/, "ws") : null;
   const mapStyle = origin(MAP_STYLE_URL);
   const rasterTiles = origin(RASTER_TILE_URL);
+  const geocoder = origin(GEOCODER_URL);
 
   const script = ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"];
   // El servidor de desarrollo evalúa código para recargar en caliente.
@@ -41,7 +45,7 @@ export function contentSecurityPolicy(nonce: string, { development = false } = {
     "style-src 'self' 'unsafe-inline'",
     `img-src ${unique(["'self'", "data:", "blob:", mapStyle, rasterTiles]).join(" ")}`,
     `font-src ${unique(["'self'", "data:", mapStyle]).join(" ")}`,
-    `connect-src ${unique(["'self'", supabase, supabaseSocket, mapStyle, rasterTiles]).join(" ")}`,
+    `connect-src ${unique(["'self'", supabase, supabaseSocket, mapStyle, rasterTiles, geocoder]).join(" ")}`,
     // MapLibre crea sus trabajadores desde blobs.
     "worker-src 'self' blob:",
     "manifest-src 'self'",

@@ -563,10 +563,39 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .delivery-points-filter span { color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
 .delivery-points-filter select { padding: 8px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); font-size: 11px; font-weight: 700; }
 .delivery-points-count { margin: 10px 20px 0; color: var(--muted); font-size: 10px; font-weight: 700; }
-.delivery-points-group-header { position: sticky; top: 0; z-index: 1; margin: 0; padding: 9px 20px 6px; background: var(--paper); color: var(--forest); font-size: 11px; font-weight: 850; letter-spacing: .03em; border-bottom: 1px solid var(--line); }
+.delivery-points-group-header { position: sticky; top: 0; z-index: 1; margin: 0; padding: 9px 20px 6px; background: var(--white); color: var(--forest); font-size: 11px; font-weight: 850; letter-spacing: .03em; border-bottom: 1px solid var(--line); }
 .field-counter { color: var(--muted); font-size: 9px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .field > input + .field-counter, .field > textarea + .field-counter { display: block; margin-top: 4px; text-align: right; }
 .delivery-category-count { margin-left: 6px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: normal; text-transform: none; }
+
+/* Asistente de ubicación: búsqueda de dirección y «mi ubicación» para rellenar coordenadas. */
+.location-assistant { margin-top: 2px; padding: 12px 13px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f8faf7; }
+.location-assistant > label { display: block; font-size: 12px; font-weight: 800; }
+.location-assistant-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 9px 0 6px; }
+.location-assistant-search { display: flex; align-items: center; gap: 7px; flex: 1 1 200px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
+.location-assistant-search svg { flex: 0 0 auto; color: var(--muted); }
+.location-assistant-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 9px 0; font-size: 12px; }
+.location-assistant-search input:focus { outline: none; }
+.location-assistant-row .button { flex: 0 0 auto; gap: 5px; }
+.location-assistant-note { margin: 6px 0 0; padding: 7px 9px; border-left: 3px solid var(--forest-2); background: var(--mint); color: #345048; font-size: 10px; line-height: 1.45; }
+.location-results { list-style: none; margin: 9px 0 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.location-results li + li { border-top: 1px solid var(--line); }
+.location-results button { display: flex; align-items: flex-start; gap: 7px; width: 100%; padding: 9px 10px; border: 0; background: var(--paper); text-align: left; font-size: 11px; line-height: 1.4; cursor: pointer; }
+.location-results button:hover { background: var(--mint); }
+.location-results svg { flex: 0 0 auto; margin-top: 2px; color: var(--forest-2); }
+
+/* Desplazamiento: en dos columnas, lista y formulario se fijan bajo el encabezado y
+   cada uno hace scroll propio, para que una lista larga o un formulario alto no
+   descuadren la página ni oculten el botón de guardar. */
+@media (min-width: 761px) {
+  .delivery-points-list {
+    position: sticky; top: 86px; align-self: start;
+    display: flex; flex-direction: column;
+    max-height: calc(100vh - 104px); overflow: hidden;
+  }
+  .delivery-points-list .ops-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .delivery-point-form { max-height: calc(100vh - 104px); overflow-y: auto; }
+}
 
 .transparency-grid { display: grid; grid-template-columns: repeat(3,1fr); border: 1px solid var(--line); background: var(--white); }
 .transparency-metric { padding: 30px; border-left: 1px solid var(--line); }

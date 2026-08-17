@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, LoaderCircle, MapPin, Pencil, Plus, Search, ShieldCheck } from "lucide-react";
+import { CheckCircle2, LoaderCircle, LocateFixed, MapPin, Pencil, Plus, Search, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { EVENT_ID } from "@/lib/constants";
 import { toOperationalMessage } from "@/lib/user-errors";
@@ -49,6 +49,40 @@ const NAME_MAX = 120;
 const LOCATION_MAX = 180;
 const ADDRESS_MAX = 300;
 const INSTRUCTIONS_MAX = 500;
+
+// Geocodificador para el asistente de dirección. Mismo origen declarado en la CSP
+// (connect-src). Nominatim de OpenStreetMap por defecto; configurable por entorno.
+const GEOCODER_URL = process.env.NEXT_PUBLIC_GEOCODER_URL || "https://nominatim.openstreetmap.org/search";
+
+type GeocodeResult = {
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: {
+    city?: string;
+    town?: string;
+    village?: string;
+    municipality?: string;
+    suburb?: string;
+    neighbourhood?: string;
+    state?: string;
+  };
+};
+
+// Las coordenadas públicas son aproximadas: se redondean para no revelar el punto exacto.
+function approximateCoordinate(value: number) {
+  return (Math.round(value * 1e4) / 1e4).toString();
+}
+
+// Etiqueta pública de zona a partir del resultado, sin publicar la dirección exacta.
+function publicZoneFromResult(result: GeocodeResult) {
+  const address = result.address ?? {};
+  const city = address.city || address.town || address.village || address.municipality || address.state;
+  const area = address.suburb || address.neighbourhood;
+  if (city && area) return `${city} · ${area}`;
+  if (city) return city;
+  return result.display_name.split(",").slice(0, 2).join(",").trim();
+}
 
 function blankForm(organizationId: string): PointForm {
   return {
@@ -98,6 +132,10 @@ export function DeliveryPointsManager({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [purposeFilter, setPurposeFilter] = useState<PurposeFilter>("all");
+  const [geoQuery, setGeoQuery] = useState("");
+  const [geoResults, setGeoResults] = useState<GeocodeResult[]>([]);
+  const [geoPending, setGeoPending] = useState(false);
+  const [geoNote, setGeoNote] = useState("");
   const idempotencyKey = useRef<string | null>(null);
 
   const organizationName = useMemo(() => {
@@ -172,6 +210,77 @@ export function DeliveryPointsManager({
         ? form.acceptedCategories.filter((value) => value !== category)
         : [...form.acceptedCategories, category].sort(),
     });
+  }
+
+  function applyCoordinates(latitude: number, longitude: number) {
+    change({ latitude: approximateCoordinate(latitude), longitude: approximateCoordinate(longitude) });
+  }
+
+  // Ubicación del dispositivo (permiso del navegador). Solo rellena las coordenadas
+  // aproximadas; nunca envía nada a terceros.
+  function useMyLocation() {
+    if (!("geolocation" in navigator)) {
+      setGeoNote("Este navegador no permite usar la ubicación. Ingresa las coordenadas a mano.");
+      return;
+    }
+    setGeoPending(true);
+    setGeoNote("");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        applyCoordinates(position.coords.latitude, position.coords.longitude);
+        setGeoResults([]);
+        setGeoNote("Coordenadas tomadas de tu ubicación. Revísalas y completa la dirección exacta privada.");
+        setGeoPending(false);
+      },
+      () => {
+        setGeoNote("No pudimos leer tu ubicación (permiso denegado o sin señal). Usa la búsqueda o las coordenadas manuales.");
+        setGeoPending(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
+  // Búsqueda de dirección por texto contra el geocodificador declarado en la CSP.
+  async function searchAddress() {
+    const term = geoQuery.trim();
+    if (term.length < 3) {
+      setGeoNote("Escribe al menos 3 caracteres para buscar.");
+      return;
+    }
+    setGeoPending(true);
+    setGeoNote("");
+    setGeoResults([]);
+    try {
+      const url = new URL(GEOCODER_URL);
+      url.searchParams.set("format", "json");
+      url.searchParams.set("addressdetails", "1");
+      url.searchParams.set("limit", "6");
+      url.searchParams.set("countrycodes", "co");
+      url.searchParams.set("accept-language", "es");
+      url.searchParams.set("q", term);
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error("geocoder");
+      const results = (await response.json()) as GeocodeResult[];
+      setGeoResults(results);
+      if (!results.length) setGeoNote("Sin resultados. Ajusta la búsqueda o ingresa las coordenadas a mano.");
+    } catch {
+      setGeoNote("No fue posible buscar ahora. Usa «Mi ubicación» o ingresa las coordenadas a mano.");
+    } finally {
+      setGeoPending(false);
+    }
+  }
+
+  // Aplica un resultado: coordenadas aproximadas, dirección exacta y zona pública sugerida
+  // (sin sobrescribir lo que el usuario ya escribió en la zona).
+  function pickResult(result: GeocodeResult) {
+    change({
+      latitude: approximateCoordinate(Number(result.lat)),
+      longitude: approximateCoordinate(Number(result.lon)),
+      exactAddress: result.display_name.slice(0, ADDRESS_MAX),
+      publicLocation: form.publicLocation.trim() || publicZoneFromResult(result).slice(0, LOCATION_MAX),
+    });
+    setGeoResults([]);
+    setGeoNote("Dirección y coordenadas aplicadas. Ajusta la zona pública y verifica antes de guardar.");
   }
 
   const filteredPoints = useMemo(() => {
@@ -290,6 +399,17 @@ export function DeliveryPointsManager({
         <div className="field"><label htmlFor="point-organization">Organización responsable <span aria-hidden="true">*</span></label><select id="point-organization" value={form.organizationId} onChange={(event) => changeOrganization(event.target.value)} disabled={Boolean(form.id)} required>{organizations.map((organization) => <option value={organization.id} key={organization.id}>{organization.name}</option>)}</select><small>Define quién puede reportar y operar sobre este punto.</small></div>
         <div className="field"><label htmlFor="point-name">Nombre operativo <span aria-hidden="true">*</span></label><input id="point-name" value={form.name} onChange={(event) => changeName(event.target.value)} minLength={3} maxLength={NAME_MAX} placeholder="Ej. Centro de recepción norte" required /><small className="field-counter">{form.name.length}/{NAME_MAX}</small></div>
         <div className="field"><label htmlFor="point-public-location">Zona pública aproximada <span aria-hidden="true">*</span></label><input id="point-public-location" value={form.publicLocation} onChange={(event) => change({ publicLocation: event.target.value })} minLength={3} maxLength={LOCATION_MAX} placeholder="Ej. Cali · zona norte" required /><small>No publiques una dirección exacta ni datos personales. <span className="field-counter">{form.publicLocation.length}/{LOCATION_MAX}</span></small></div>
+        <div className="field location-assistant">
+          <label htmlFor="point-geo-search">Asistente de ubicación (opcional)</label>
+          <div className="location-assistant-row">
+            <div className="location-assistant-search"><Search size={15} aria-hidden="true" /><input id="point-geo-search" value={geoQuery} onChange={(event) => setGeoQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); searchAddress(); } }} placeholder="Busca una dirección o lugar. Ej. Cra 5 # 10-20, Cali" /></div>
+            <button className="button button-outline button-small" type="button" onClick={searchAddress} disabled={geoPending}>{geoPending ? <LoaderCircle className="spin" size={14} /> : <Search size={14} />} Buscar</button>
+            <button className="button button-outline button-small" type="button" onClick={useMyLocation} disabled={geoPending}><LocateFixed size={14} /> Mi ubicación</button>
+          </div>
+          <small>Rellena las coordenadas aproximadas y la dirección exacta privada. Siempre revisa antes de guardar.</small>
+          {geoNote && <p className="location-assistant-note" role="status">{geoNote}</p>}
+          {geoResults.length > 0 && <ul className="location-results">{geoResults.map((result, index) => <li key={`${result.lat}-${result.lon}-${index}`}><button type="button" onClick={() => pickResult(result)}><MapPin size={13} aria-hidden="true" /> {result.display_name}</button></li>)}</ul>}
+        </div>
         <div className="field"><label htmlFor="point-exact-address">Dirección exacta privada <span aria-hidden="true">*</span></label><input id="point-exact-address" value={form.exactAddress} onChange={(event) => change({ exactAddress: event.target.value })} minLength={5} maxLength={ADDRESS_MAX} placeholder="Visible solo para el equipo autorizado" required /><small className="field-counter">{form.exactAddress.length}/{ADDRESS_MAX}</small></div>
         <div className="field"><label htmlFor="point-public-instructions">Instrucciones públicas (opcional)</label><textarea id="point-public-instructions" value={form.publicInstructions} onChange={(event) => change({ publicInstructions: event.target.value })} maxLength={INSTRUCTIONS_MAX} placeholder="Ej. Coordina el horario después de recibir tu código APO." /><small>Sin teléfonos personales, nombres de personas ni dirección exacta. <span className="field-counter">{form.publicInstructions.length}/{INSTRUCTIONS_MAX}</span></small></div>
         <div className="field-grid"><div className="field"><label htmlFor="point-latitude">Latitud aproximada <span aria-hidden="true">*</span></label><input id="point-latitude" type="number" min="-4.5" max="13.5" step="0.0001" value={form.latitude} onChange={(event) => change({ latitude: event.target.value })} required /></div><div className="field"><label htmlFor="point-longitude">Longitud aproximada <span aria-hidden="true">*</span></label><input id="point-longitude" type="number" min="-82" max="-66.5" step="0.0001" value={form.longitude} onChange={(event) => change({ longitude: event.target.value })} required /></div></div>
