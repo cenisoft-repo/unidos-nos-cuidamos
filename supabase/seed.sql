@@ -42,6 +42,11 @@ insert into public.memberships(user_id,organization_id,event_id,role) values
 ('00000000-0000-0000-0000-000000000104','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_requester'),
 ('00000000-0000-0000-0000-000000000105','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_approver');
 
+-- Promueve los aliados de referencia a organizaciones operativas con su punto de acopio.
+-- Misma función que usa la migración; aquí se ejecuta con el evento y las membresías ya
+-- creados. Debe ir después de las membresías para que replique la administración vigente.
+select public.seed_ally_operational_points('10000000-0000-0000-0000-000000000001');
+
 insert into public.official_sources(id,event_id,organization_name,title,url,published_at,checksum) values
 ('30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Fuente oficial simulada','Boletín de ejercicio #1','https://example.invalid/fuente-simulada','2026-08-13T08:30:00-05:00','synthetic-only');
 

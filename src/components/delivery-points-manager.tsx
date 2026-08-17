@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, LoaderCircle, MapPin, Pencil, Plus, ShieldCheck } from "lucide-react";
+import { CheckCircle2, LoaderCircle, MapPin, Pencil, Plus, Search, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { EVENT_ID } from "@/lib/constants";
 import { toOperationalMessage } from "@/lib/user-errors";
@@ -26,6 +26,8 @@ export type DeliveryPointAdmin = {
 };
 
 type OrganizationOption = { id: string; name: string };
+type StatusFilter = "all" | "active" | "inactive";
+type PurposeFilter = "all" | "acopio" | "despacho";
 
 type PointForm = {
   id: string | null;
@@ -42,6 +44,11 @@ type PointForm = {
   dispatchesShipments: boolean;
   acceptedCategories: string[];
 };
+
+const NAME_MAX = 120;
+const LOCATION_MAX = 180;
+const ADDRESS_MAX = 300;
+const INSTRUCTIONS_MAX = 500;
 
 function blankForm(organizationId: string): PointForm {
   return {
@@ -67,6 +74,12 @@ function purposeLabel(point: { accepts_donations: boolean; dispatches_shipments:
   return "Solo despacho";
 }
 
+// El nombre operativo sugerido a partir de la organización responsable: acerca el concepto
+// «aliado» al de «punto» sin obligar a teclearlo, y solo mientras nadie lo haya editado.
+function suggestedName(organizationName: string) {
+  return organizationName ? `Acopio ${organizationName}` : "";
+}
+
 export function DeliveryPointsManager({
   organizations,
   points,
@@ -81,7 +94,16 @@ export function DeliveryPointsManager({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [nameEdited, setNameEdited] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [purposeFilter, setPurposeFilter] = useState<PurposeFilter>("all");
   const idempotencyKey = useRef<string | null>(null);
+
+  const organizationName = useMemo(() => {
+    const lookup = new Map(organizations.map((organization) => [organization.id, organization.name]));
+    return (id: string) => lookup.get(id) ?? "";
+  }, [organizations]);
 
   function change(patch: Partial<PointForm>) {
     idempotencyKey.current = null;
@@ -90,9 +112,32 @@ export function DeliveryPointsManager({
     setMessage("");
   }
 
+  // Al elegir la organización responsable en un punto nuevo, propone el nombre operativo
+  // mientras el usuario no lo haya escrito a mano.
+  function changeOrganization(organizationId: string) {
+    setForm((current) => {
+      const shouldSuggest = current.id === null && !nameEdited;
+      return {
+        ...current,
+        organizationId,
+        name: shouldSuggest ? suggestedName(organizationName(organizationId)) : current.name,
+      };
+    });
+    idempotencyKey.current = null;
+    setError("");
+    setMessage("");
+  }
+
+  function changeName(value: string) {
+    setNameEdited(true);
+    change({ name: value });
+  }
+
   function startCreate() {
     idempotencyKey.current = null;
-    setForm(blankForm(organizations[0]?.id ?? ""));
+    const organizationId = organizations[0]?.id ?? "";
+    setForm({ ...blankForm(organizationId), name: suggestedName(organizationName(organizationId)) });
+    setNameEdited(false);
     setError("");
     setMessage("");
     document.getElementById("delivery-point-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -115,6 +160,7 @@ export function DeliveryPointsManager({
       dispatchesShipments: point.dispatches_shipments,
       acceptedCategories: point.accepted_categories ?? [],
     });
+    setNameEdited(true);
     setError("");
     setMessage("");
     document.getElementById("delivery-point-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -128,6 +174,24 @@ export function DeliveryPointsManager({
     });
   }
 
+  const filteredPoints = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return points.filter((point) => {
+      if (statusFilter === "active" && !point.active) return false;
+      if (statusFilter === "inactive" && point.active) return false;
+      if (purposeFilter === "acopio" && !point.accepts_donations) return false;
+      if (purposeFilter === "despacho" && !point.dispatches_shipments) return false;
+      if (!needle) return true;
+      return (
+        point.name.toLowerCase().includes(needle) ||
+        point.organization_name.toLowerCase().includes(needle) ||
+        point.public_location_text.toLowerCase().includes(needle)
+      );
+    });
+  }, [points, query, statusFilter, purposeFilter]);
+
+  const hasFilters = query.trim() !== "" || statusFilter !== "all" || purposeFilter !== "all";
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!form.acceptsDonations && !form.dispatchesShipments) {
@@ -137,6 +201,17 @@ export function DeliveryPointsManager({
     if (form.acceptsDonations && !form.acceptedCategories.length) {
       setError("Un punto que recibe aportes necesita al menos una categoría aceptada.");
       return;
+    }
+    // Desactivar retira el punto del mapa público y de nuevas solicitudes: se confirma para
+    // que nunca sea un descuido, pero sin borrar nada (la trazabilidad se conserva).
+    if (form.id && !form.active) {
+      const original = points.find((point) => point.id === form.id);
+      if (original?.active) {
+        const confirmed = globalThis.confirm(
+          "El punto quedará inactivo: saldrá del mapa público y de nuevas solicitudes. La trazabilidad se conserva. ¿Continuar?",
+        );
+        if (!confirmed) return;
+      }
     }
 
     setPending(true);
@@ -171,20 +246,39 @@ export function DeliveryPointsManager({
 
     idempotencyKey.current = null;
     setMessage(form.id ? "La parametrización quedó actualizada y auditada." : "El punto de entrega quedó creado y auditado.");
-    if (!form.id) setForm(blankForm(form.organizationId));
+    if (!form.id) {
+      setForm(blankForm(form.organizationId));
+      setNameEdited(false);
+    }
     router.refresh();
   }
 
   return <div className="delivery-points-layout">
     <section className="ops-panel delivery-points-list" aria-labelledby="delivery-points-list-title">
       <header className="ops-panel-header"><div><h2 id="delivery-points-list-title"><MapPin size={18} /> Puntos configurados</h2><p>La desactivación conserva la trazabilidad y retira el punto de nuevas solicitudes.</p></div><button className="button button-dark button-small" type="button" onClick={startCreate}><Plus size={15} /> Nuevo punto</button></header>
+
+      {points.length > 0 && <div className="delivery-points-toolbar" role="search">
+        <div className="delivery-points-search"><Search size={15} aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por punto, organización o zona" aria-label="Buscar puntos" /></div>
+        <label className="delivery-points-filter"><span>Estado</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}><option value="all">Todos</option><option value="active">Activos</option><option value="inactive">Inactivos</option></select></label>
+        <label className="delivery-points-filter"><span>Propósito</span><select value={purposeFilter} onChange={(event) => setPurposeFilter(event.target.value as PurposeFilter)}><option value="all">Todos</option><option value="acopio">Acopio</option><option value="despacho">Despacho</option></select></label>
+      </div>}
+
+      {points.length > 0 && <p className="delivery-points-count">{filteredPoints.length} de {points.length} punto{points.length === 1 ? "" : "s"}{hasFilters ? " (filtrado)" : ""}</p>}
+
       <div className="ops-list">
-        {points.map((point) => <article className="delivery-point-row" key={point.id}>
-          <div className="delivery-point-title"><div><span className={`delivery-point-status ${point.active ? "is-active" : ""}`}>{point.active ? "Activo" : "Inactivo"}</span><span className="delivery-point-purpose">{purposeLabel(point)}</span><h3>{point.name}</h3><p>{point.organization_name} · {point.public_location_text}</p></div><button className="button button-outline button-small" type="button" onClick={() => startEdit(point)}><Pencil size={14} /> Editar</button></div>
-          <dl className="delivery-point-facts">{/* Sin reglas propias el punto no queda sin categorías: hereda las de su organización. */}
-            <div><dt>Recibe</dt><dd>{point.accepts_donations ? (point.accepted_categories?.join(", ") || "Hereda las reglas generales de su organización") : "No recibe aportes"}</dd></div><div><dt>Despacha salidas</dt><dd>{point.dispatches_shipments ? "Sí, puede ser origen de un despacho" : "No"}</dd></div><div><dt>Coordenada pública</dt><dd>{point.public_latitude}, {point.public_longitude}</dd></div><div><dt>Cadena de frío</dt><dd>{point.cold_chain_capable ? "Sí" : "No"}</dd></div><div><dt>Instrucción pública</dt><dd>{point.public_instructions || "Sin instrucción adicional"}</dd></div></dl>
-        </article>)}
+        {filteredPoints.map((point, index) => {
+          const groupHeader = index === 0 || filteredPoints[index - 1].organization_name !== point.organization_name ? point.organization_name : null;
+          return <div key={point.id}>
+            {groupHeader && <h3 className="delivery-points-group-header">{groupHeader}</h3>}
+            <article className="delivery-point-row">
+              <div className="delivery-point-title"><div><span className={`delivery-point-status ${point.active ? "is-active" : ""}`}>{point.active ? "Activo" : "Inactivo"}</span><span className="delivery-point-purpose">{purposeLabel(point)}</span><h3>{point.name}</h3><p>{point.organization_name} · {point.public_location_text}</p></div><button className="button button-outline button-small" type="button" onClick={() => startEdit(point)}><Pencil size={14} /> Editar</button></div>
+              <dl className="delivery-point-facts">{/* Sin reglas propias el punto no queda sin categorías: hereda las de su organización. */}
+                <div><dt>Recibe</dt><dd>{point.accepts_donations ? (point.accepted_categories?.join(", ") || "Hereda las reglas generales de su organización") : "No recibe aportes"}</dd></div><div><dt>Despacha salidas</dt><dd>{point.dispatches_shipments ? "Sí, puede ser origen de un despacho" : "No"}</dd></div><div><dt>Coordenada pública</dt><dd>{point.public_latitude}, {point.public_longitude}</dd></div><div><dt>Cadena de frío</dt><dd>{point.cold_chain_capable ? "Sí" : "No"}</dd></div><div><dt>Instrucción pública</dt><dd>{point.public_instructions || "Sin instrucción adicional"}</dd></div></dl>
+            </article>
+          </div>;
+        })}
         {!points.length && <p className="ops-empty">Todavía no hay puntos parametrizados para este evento.</p>}
+        {points.length > 0 && !filteredPoints.length && <p className="ops-empty">Ningún punto coincide con la búsqueda o los filtros.</p>}
       </div>
     </section>
 
@@ -193,18 +287,18 @@ export function DeliveryPointsManager({
       <div className="delivery-point-form-body">
         {error && <p className="form-error" role="alert">{error}</p>}
         {message && <p className="form-success" role="status"><CheckCircle2 size={16} /> {message}</p>}
-        <div className="field"><label htmlFor="point-organization">Organización responsable <span aria-hidden="true">*</span></label><select id="point-organization" value={form.organizationId} onChange={(event) => change({ organizationId: event.target.value })} disabled={Boolean(form.id)} required>{organizations.map((organization) => <option value={organization.id} key={organization.id}>{organization.name}</option>)}</select><small>Define quién puede reportar y operar sobre este punto.</small></div>
-        <div className="field"><label htmlFor="point-name">Nombre operativo <span aria-hidden="true">*</span></label><input id="point-name" value={form.name} onChange={(event) => change({ name: event.target.value })} minLength={3} maxLength={120} placeholder="Ej. Centro de recepción norte" required /></div>
-        <div className="field"><label htmlFor="point-public-location">Zona pública aproximada <span aria-hidden="true">*</span></label><input id="point-public-location" value={form.publicLocation} onChange={(event) => change({ publicLocation: event.target.value })} minLength={3} maxLength={180} placeholder="Ej. Cali · zona norte" required /><small>No publiques una dirección exacta ni datos personales.</small></div>
-        <div className="field"><label htmlFor="point-exact-address">Dirección exacta privada <span aria-hidden="true">*</span></label><input id="point-exact-address" value={form.exactAddress} onChange={(event) => change({ exactAddress: event.target.value })} minLength={5} maxLength={300} placeholder="Visible solo para el equipo autorizado" required /></div>
-        <div className="field"><label htmlFor="point-public-instructions">Instrucciones públicas (opcional)</label><textarea id="point-public-instructions" value={form.publicInstructions} onChange={(event) => change({ publicInstructions: event.target.value })} maxLength={500} placeholder="Ej. Coordina el horario después de recibir tu código APO." /><small>Sin teléfonos personales, nombres de personas ni dirección exacta.</small></div>
+        <div className="field"><label htmlFor="point-organization">Organización responsable <span aria-hidden="true">*</span></label><select id="point-organization" value={form.organizationId} onChange={(event) => changeOrganization(event.target.value)} disabled={Boolean(form.id)} required>{organizations.map((organization) => <option value={organization.id} key={organization.id}>{organization.name}</option>)}</select><small>Define quién puede reportar y operar sobre este punto.</small></div>
+        <div className="field"><label htmlFor="point-name">Nombre operativo <span aria-hidden="true">*</span></label><input id="point-name" value={form.name} onChange={(event) => changeName(event.target.value)} minLength={3} maxLength={NAME_MAX} placeholder="Ej. Centro de recepción norte" required /><small className="field-counter">{form.name.length}/{NAME_MAX}</small></div>
+        <div className="field"><label htmlFor="point-public-location">Zona pública aproximada <span aria-hidden="true">*</span></label><input id="point-public-location" value={form.publicLocation} onChange={(event) => change({ publicLocation: event.target.value })} minLength={3} maxLength={LOCATION_MAX} placeholder="Ej. Cali · zona norte" required /><small>No publiques una dirección exacta ni datos personales. <span className="field-counter">{form.publicLocation.length}/{LOCATION_MAX}</span></small></div>
+        <div className="field"><label htmlFor="point-exact-address">Dirección exacta privada <span aria-hidden="true">*</span></label><input id="point-exact-address" value={form.exactAddress} onChange={(event) => change({ exactAddress: event.target.value })} minLength={5} maxLength={ADDRESS_MAX} placeholder="Visible solo para el equipo autorizado" required /><small className="field-counter">{form.exactAddress.length}/{ADDRESS_MAX}</small></div>
+        <div className="field"><label htmlFor="point-public-instructions">Instrucciones públicas (opcional)</label><textarea id="point-public-instructions" value={form.publicInstructions} onChange={(event) => change({ publicInstructions: event.target.value })} maxLength={INSTRUCTIONS_MAX} placeholder="Ej. Coordina el horario después de recibir tu código APO." /><small>Sin teléfonos personales, nombres de personas ni dirección exacta. <span className="field-counter">{form.publicInstructions.length}/{INSTRUCTIONS_MAX}</span></small></div>
         <div className="field-grid"><div className="field"><label htmlFor="point-latitude">Latitud aproximada <span aria-hidden="true">*</span></label><input id="point-latitude" type="number" min="-4.5" max="13.5" step="0.0001" value={form.latitude} onChange={(event) => change({ latitude: event.target.value })} required /></div><div className="field"><label htmlFor="point-longitude">Longitud aproximada <span aria-hidden="true">*</span></label><input id="point-longitude" type="number" min="-82" max="-66.5" step="0.0001" value={form.longitude} onChange={(event) => change({ longitude: event.target.value })} required /></div></div>
         <fieldset className="delivery-purpose-fieldset">
           <legend>¿Para qué sirve este punto? <span aria-hidden="true">*</span></legend>
           <label className="form-check"><input type="checkbox" checked={form.acceptsDonations} onChange={(event) => change({ acceptsDonations: event.target.checked })} /><span><strong>Centro de acopio</strong><small>Recibe aportes. Aparece en el mapa público y en el paso «Punto de entrega» del aliado.</small></span></label>
           <label className="form-check"><input type="checkbox" checked={form.dispatchesShipments} onChange={(event) => change({ dispatchesShipments: event.target.checked })} /><span><strong>Centro de despacho</strong><small>Puede ser el origen de una salida hacia una necesidad. No se publica como punto de recepción.</small></span></label>
         </fieldset>
-        {form.acceptsDonations && <fieldset className="delivery-category-fieldset"><legend>Categorías que recibe <span aria-hidden="true">*</span></legend><div className="delivery-category-grid">{categories.map((category) => <label key={category}><input type="checkbox" checked={form.acceptedCategories.includes(category)} onChange={() => toggleCategory(category)} /><span>{category}</span></label>)}</div></fieldset>}
+        {form.acceptsDonations && <fieldset className="delivery-category-fieldset"><legend>Categorías que recibe <span aria-hidden="true">*</span> <span className="delivery-category-count">{form.acceptedCategories.length} seleccionada{form.acceptedCategories.length === 1 ? "" : "s"}</span></legend><div className="delivery-category-grid">{categories.map((category) => <label key={category}><input type="checkbox" checked={form.acceptedCategories.includes(category)} onChange={() => toggleCategory(category)} /><span>{category}</span></label>)}</div></fieldset>}
         <label className="form-check"><input type="checkbox" checked={form.coldChain} onChange={(event) => change({ coldChain: event.target.checked })} /><span><strong>Cuenta con cadena de frío</strong><small>Habilita aportes que requieren conservación refrigerada.</small></span></label>
         <label className="form-check"><input type="checkbox" checked={form.active} onChange={(event) => change({ active: event.target.checked })} /><span><strong>Punto activo</strong><small>Si está inactivo no aparece en nuevas solicitudes ni en el mapa público.</small></span></label>
         <p className="delivery-point-security"><ShieldCheck size={17} /><span>Guardar crea una versión auditada de las reglas. No se eliminan puntos ni se reescribe el historial.</span></p>

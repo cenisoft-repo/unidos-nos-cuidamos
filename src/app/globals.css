@@ -553,6 +553,21 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .delivery-point-security { display: flex; gap: 9px; margin: 17px 0; padding: 11px; border-left: 3px solid var(--forest-2); background: var(--mint); color: var(--forest); font-size: 10px; line-height: 1.5; }
 .delivery-point-security svg { flex: 0 0 auto; }
 
+/* Barra de búsqueda y filtros de la lista de puntos (crece con muchos aliados). */
+.delivery-points-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; padding: 14px 20px 0; }
+.delivery-points-search { display: flex; align-items: center; gap: 7px; flex: 1 1 220px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
+.delivery-points-search svg { flex: 0 0 auto; color: var(--muted); }
+.delivery-points-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 9px 0; font-size: 12px; }
+.delivery-points-search input:focus { outline: none; }
+.delivery-points-filter { display: flex; flex-direction: column; gap: 3px; }
+.delivery-points-filter span { color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.delivery-points-filter select { padding: 8px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); font-size: 11px; font-weight: 700; }
+.delivery-points-count { margin: 10px 20px 0; color: var(--muted); font-size: 10px; font-weight: 700; }
+.delivery-points-group-header { position: sticky; top: 0; z-index: 1; margin: 0; padding: 9px 20px 6px; background: var(--paper); color: var(--forest); font-size: 11px; font-weight: 850; letter-spacing: .03em; border-bottom: 1px solid var(--line); }
+.field-counter { color: var(--muted); font-size: 9px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.field > input + .field-counter, .field > textarea + .field-counter { display: block; margin-top: 4px; text-align: right; }
+.delivery-category-count { margin-left: 6px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: normal; text-transform: none; }
+
 .transparency-grid { display: grid; grid-template-columns: repeat(3,1fr); border: 1px solid var(--line); background: var(--white); }
 .transparency-metric { padding: 30px; border-left: 1px solid var(--line); }
 .transparency-metric:first-child { border-left: 0; }
