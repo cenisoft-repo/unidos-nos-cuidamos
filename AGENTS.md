@@ -15,6 +15,7 @@
 - Aplicación: `npm run dev`
 - Validación: `npm run verify`
 - E2E: `npm run test:e2e`
+- Entorno desde cero: `npm run bootstrap:environment` y `npm run verify:environment-flow` (ver `docs/REMOTE_SETUP_RUNBOOK.md`)
 
 ## Convenciones
 

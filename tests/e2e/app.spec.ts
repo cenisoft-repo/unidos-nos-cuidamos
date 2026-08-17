@@ -43,7 +43,14 @@ test("mapa filtra necesidades y seguimiento explica el recorrido", async ({ page
   await expect(page.getByText("Kits de higiene familiar").first()).toBeVisible();
 
   await page.goto("/seguimiento");
-  await page.getByRole("button", { name: "Usar un código de práctica" }).click();
+  // El atajo al código de ejemplo solo existe mientras la instancia declare datos de
+  // práctica. La prueba escribe el código para funcionar también en modo producción.
+  const demoShortcut = page.getByRole("button", { name: "Usar un código de práctica" });
+  if (await demoShortcut.count()) {
+    await demoShortcut.click();
+  } else {
+    await page.getByLabel("Código de seguimiento").fill("NEC-A1B2C3D4E5F60718293A4B5C");
+  }
   await page.getByRole("button", { name: "Ver mi recorrido" }).click();
   await expect(page.getByRole("heading", { name: "Publicado" })).toBeVisible();
   await expect(page.getByText("Necesidad verificada", { exact: true })).toBeVisible();
@@ -74,6 +81,15 @@ test("reporte seguro genera código y no se publica", async ({ page }) => {
   await expect(page.getByText(/NEC-[A-F0-9]{24}/)).toBeVisible();
 });
 
+test("ingreso no publica cuentas ni credenciales de práctica", async ({ page }) => {
+  await page.goto("/ingresar");
+  await expect(page.getByText("Cuentas de práctica")).toHaveCount(0);
+  await expect(page.getByText("admin@rutasolidaria.local")).toHaveCount(0);
+  await expect(page.getByText("aliado@rutasolidaria.local")).toHaveCount(0);
+  await expect(page.getByLabel("Correo")).toBeVisible();
+  await expect(page.getByLabel("Contraseña")).toBeVisible();
+});
+
 test("Supabase Auth abre el centro operativo con rol y sin PII pública", async ({ page }) => {
   await page.goto("/ingresar");
   await page.getByLabel("Correo").fill("admin@rutasolidaria.local");
@@ -81,6 +97,9 @@ test("Supabase Auth abre el centro operativo con rol y sin PII pública", async 
   await page.getByRole("button", { name: "Ingresar", exact: true }).click();
   await expect(page).toHaveURL(/\/operaciones$/);
   await expect(page.getByRole("heading", { name: /Buenos días, Ana/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Solicitudes pendientes de decisión" })).toBeVisible();
+  await expect(page.getByText("Necesidad reportada por la ciudadanía").first()).toBeVisible();
+  await expect(page.getByText(/Siguiente control:.*confirmar hechos/).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Bodega y logística" })).toBeVisible();
   const exportLink = page.getByRole("link", { name: "Exportar Excel" });
   await expect(exportLink).toHaveAttribute("href", "/api/exports/operations.xlsx");
@@ -95,6 +114,49 @@ test("Supabase Auth abre el centro operativo con rol y sin PII pública", async 
   expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Resumen", "Necesidades", "Aportes", "Artículos", "Inventario", "Finanzas"]);
   expect(String(workbook.getWorksheet("Resumen")?.getCell("A2").value)).not.toContain("admin@rutasolidaria.local");
   await expect(page.getByText("admin@rutasolidaria.local")).toHaveCount(1);
+});
+
+test("administración parametriza un punto de entrega sin exponer la dirección", async ({ page }) => {
+  await page.goto("/ingresar?next=/operaciones/centros");
+  await page.getByLabel("Correo").fill("admin@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await expect(page).toHaveURL(/\/operaciones\/centros$/);
+
+  await expect(page.getByRole("heading", { name: "Parametrizar puntos de entrega" })).toBeVisible();
+  await page.getByLabel("Organización responsable").selectOption({ label: "Aliados Unidos Demo" });
+  await page.getByLabel("Nombre operativo").fill("Punto parametrizado E2E");
+  await page.getByLabel("Zona pública aproximada").fill("Cali · zona occidental de práctica");
+  await page.getByLabel("Dirección exacta privada").fill("Dirección privada sintética E2E 123");
+  await page.getByLabel("Instrucciones públicas (opcional)").fill("Coordina el horario después de recibir tu código APO.");
+  await page.getByLabel("Agua", { exact: true }).check();
+  await page.getByLabel("Higiene", { exact: true }).check();
+  await page.getByLabel("Cuenta con cadena de frío").check();
+  await page.getByRole("button", { name: "Crear punto de entrega" }).click();
+
+  await expect(page.getByText("El punto de entrega quedó creado y auditado.")).toBeVisible();
+  const point = page.locator(".delivery-point-row").filter({ hasText: "Punto parametrizado E2E" }).last();
+  await expect(point).toContainText("Aliados Unidos Demo · Cali · zona occidental de práctica");
+  await expect(point).toContainText("Agua, Higiene");
+  await expect(point).toContainText("Coordina el horario después de recibir tu código APO.");
+  await expect(point).not.toContainText("Dirección privada sintética E2E 123");
+  await expect(point).toContainText("Solo acopio");
+
+  // Un centro de despacho no declara categorías y no se publica como punto de recepción.
+  await page.getByRole("button", { name: "Nuevo punto" }).click();
+  await page.getByLabel("Organización responsable").selectOption({ label: "Aliados Unidos Demo" });
+  await page.getByLabel("Nombre operativo").fill("Base de despacho E2E");
+  await page.getByLabel("Zona pública aproximada").fill("Cali · salida sur de práctica");
+  await page.getByLabel("Dirección exacta privada").fill("Dirección privada de despacho E2E 456");
+  await page.getByLabel("Centro de acopio").uncheck();
+  await page.getByLabel("Centro de despacho").check();
+  await expect(page.getByRole("group", { name: "Categorías que recibe" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Crear punto de entrega" }).click();
+
+  await expect(page.getByText("El punto de entrega quedó creado y auditado.")).toBeVisible();
+  const dispatchPoint = page.locator(".delivery-point-row").filter({ hasText: "Base de despacho E2E" }).last();
+  await expect(dispatchPoint).toContainText("Solo despacho");
+  await expect(dispatchPoint).toContainText("No recibe aportes");
 });
 
 test("bodega guía recepción, compatibilidad y evidencia bloqueada", async ({ page }) => {
@@ -120,26 +182,41 @@ test("aporte guiado conserva pasos y genera ticket con QR", async ({ page }) => 
   await page.getByRole("button", { name: "Ingresar", exact: true }).click();
   await expect(page).toHaveURL(/\/donar$/);
 
-  await page.getByRole("button", { name: "Agua", exact: true }).click();
-  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await expect(page.getByText("Paso 1 de 4")).toBeVisible();
+  await page.getByRole("button", { name: "Agua potable", exact: true }).click();
   await page.getByLabel("¿Qué es?").fill("Botellas selladas para prueba E2E");
   await page.locator("#quantity-0").fill("12");
   await page.locator("#unit-0").selectOption("litro");
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Destino y entrega" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "¿Dónde lo entregas?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Centro aliado temporal.*Recibe Agua/ })).toBeEnabled();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await page.getByLabel("Nombre del donante (empresa o persona)").fill("Empresa donante sintética E2E");
   await page.getByLabel("Correo de coordinación").fill("e2e@example.local");
+  await page.getByRole("button", { name: /Más datos internos/ }).click();
+  await page.getByLabel("Tipo de donante").selectOption("empresa");
+  await page.getByLabel("Sector económico").selectOption("alimentos_bebidas");
+  await page.getByLabel("Aliado relacionado con el aporte").selectOption("propacifico");
+  await page.getByLabel("Evidencia fotográfica (opcional y privada)").setInputFiles({
+    name: "evidencia-sintetica-e2e.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
+  });
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Revisa la solicitud antes de enviarla" })).toBeVisible();
+  await expect(page.getByText(/No es una solicitud de ayuda, un recibo ni una confirmación de entrega/)).toBeVisible();
   await expect(page.getByText("Se podrá publicar tras verificar")).toBeVisible();
   await expect(page.getByText("Permanece privado")).toBeVisible();
   await expect(page.getByText("Nombre legal, correo y teléfono")).toBeVisible();
+  await expect(page.getByText("PROPACIFICO", { exact: true })).toBeVisible();
+  await expect(page.getByText(/1 foto seleccionada.*después de crear el código/)).toBeVisible();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Confirmar aporte" }).click();
 
-  await expect(page.getByRole("heading", { name: "Tu aporte ya tiene una ruta segura." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tu aporte quedó reportado con un código." })).toBeVisible();
   await expect(page.getByText(/APO-[A-F0-9]{24}/)).toBeVisible();
   await expect(page.getByText("Escanea para consultar el estado")).toBeVisible();
+  await expect(page.getByText(/La fotografía quedó vinculada.*privada/)).toBeVisible();
 });
 
 test("aporte económico pasa de declaración privada a conciliación pública", async ({ page }) => {
@@ -149,10 +226,9 @@ test("aporte económico pasa de declaración privada a conciliación pública", 
   await page.getByRole("button", { name: "Ingresar", exact: true }).click();
 
   await page.getByRole("button", { name: "Aporte económico" }).click();
-  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await expect(page.getByText("Paso 1 de 3")).toBeVisible();
   await page.getByLabel("Monto declarado (COP)").fill("275000");
-  await page.getByRole("button", { name: "Continuar", exact: true }).click();
-  await page.getByLabel("Estado declarado del aporte").selectOption("entregada_por_validar");
+  await page.getByLabel("Situación actual del aporte").selectOption("entregada");
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await page.getByLabel("Nombre del donante (empresa o persona)").fill("Empresa monetaria sintética E2E");
   await page.getByLabel("Correo de coordinación").fill("money-e2e@example.local");
@@ -183,7 +259,9 @@ test("aporte económico pasa de declaración privada a conciliación pública", 
   expect(operationalCode).toMatch(/DON-[A-F0-9]{24}/);
   await moneyRow.getByLabel("Referencia del soporte").fill(`SUPPORT-${operationalCode}`);
   await moneyRow.getByRole("button", { name: "Conciliar aporte" }).click();
-  await expect(page.getByText("Aporte conciliado y publicado.")).toBeVisible();
+  await expect(page.getByText(/Aporte conciliado.*El monto ya es público; la referencia del soporte no/)).toBeVisible();
+  // El saldo sale del libro completo, no de la lista visible.
+  await expect(page.getByText(/movimientos del libro completo/)).toBeVisible();
 
   await page.goto("/transparencia");
   await expect(page.getByRole("heading", { name: "Dashboard de aportes verificados" })).toBeVisible();

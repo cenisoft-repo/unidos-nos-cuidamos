@@ -15,6 +15,10 @@ const { error: signInError } = await supabase.auth.signInWithPassword({
 });
 assert.equal(signInError, null, "La cuenta aliada sandbox debe autenticar");
 
+const { data: catalogVersions, error: catalogError } = await supabase.rpc("current_donation_catalog_versions");
+assert.equal(catalogError, null, `Los catálogos deben estar disponibles: ${catalogError?.message ?? ""}`);
+assert.ok(catalogVersions && typeof catalogVersions === "object", "Las versiones de catálogo deben ser un objeto");
+
 const idempotencyKey = `concurrency-${crypto.randomUUID()}`;
 const payload = {
   p_event_id: "10000000-0000-0000-0000-000000000001",
@@ -29,6 +33,7 @@ const payload = {
   p_declared_status: "comprometida",
   p_items: [{
     category: "Agua",
+    category_code: "agua_potable",
     description: "Botellas selladas para prueba concurrente",
     quantity: 12,
     unit: "litro",
@@ -41,16 +46,18 @@ const payload = {
   p_preferred_location_id: "70000000-0000-0000-0000-000000000002",
   p_reporting_context: {
     donor_type: "empresa",
-    economic_sector: "Tecnología",
+    economic_sector: "tecnologia",
     specific_destination: false,
     estimated_beneficiaries: "",
     internal_contact: {},
   },
+  p_catalog_versions: catalogVersions,
+  p_declared_category_code: null,
 };
 
 const results = await Promise.all([
-  supabase.rpc("submit_donation_intake", payload),
-  supabase.rpc("submit_donation_intake", payload),
+  supabase.rpc("submit_donation_intake_v2", payload),
+  supabase.rpc("submit_donation_intake_v2", payload),
 ]);
 
 for (const result of results) {

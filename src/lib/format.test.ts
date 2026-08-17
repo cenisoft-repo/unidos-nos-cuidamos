@@ -20,4 +20,10 @@ describe("presentación segura y localizada", () => {
   it("no falla con una fecha ausente", () => {
     expect(formatDate(null)).toBe("Sin fecha");
   });
+
+  it("normaliza espacios para que servidor y navegador hidraten el mismo texto", () => {
+    const formatted = formatDate("2026-08-16T20:43:00.000Z");
+    expect(formatted).not.toContain("\u00a0");
+    expect(formatted).toContain("16");
+  });
 });

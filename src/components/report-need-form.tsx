@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, LoaderCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toOperationalMessage } from "@/lib/user-errors";
-import { DEMO_EVENT_ID, NEED_CATEGORIES, NORMALIZED_UNITS } from "@/lib/constants";
+import { EVENT_ID, NEED_CATEGORIES, NORMALIZED_UNITS } from "@/lib/constants";
 import { CategoryIcon } from "./category-icon";
 
 type Result = { tracking_code: string; status: string };
@@ -23,7 +23,7 @@ export function ReportNeedForm() {
     const form = new FormData(formElement);
     const supabase = createClient();
     const { data, error: submitError } = await supabase.rpc("submit_need_report", {
-      p_event_id: DEMO_EVENT_ID,
+      p_event_id: EVENT_ID,
       p_category: String(form.get("category")),
       p_description: String(form.get("description")),
       p_public_location: String(form.get("public_location")),

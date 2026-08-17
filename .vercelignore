@@ -1,3 +1,20 @@
+# La CLI de Vercel usa ESTE archivo en lugar de .gitignore cuando existe. Todo lo que
+# .gitignore excluye hay que repetirlo aquí o se sube igual: `.next/` pesa cientos de MB
+# y su subida deja el despliegue colgado en «Building…» sin llegar a compilar nunca.
+
+# Artefactos de compilación: Vercel los reconstruye desde el código
+.next/
+out/
+*.tsbuildinfo
+
+# Copias locales y enlaces de proyecto
+.local-backups/
+.vercel/
+
+# Variables de entorno locales
+.env*
+!.env.example
+
 # Runtime / tooling local
 .codex-runtime/
 .claude/

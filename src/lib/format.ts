@@ -13,7 +13,7 @@ export function formatDate(value: string | null | undefined) {
     hour: "numeric",
     minute: "2-digit",
     timeZone: "America/Bogota",
-  }).format(new Date(value));
+  }).format(new Date(value)).replace(/\u00a0/g, " ");
 }
 
 export function cn(...values: Array<string | false | null | undefined>) {

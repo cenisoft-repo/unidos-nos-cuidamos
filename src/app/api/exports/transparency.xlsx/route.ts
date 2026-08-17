@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { DEMO_EVENT_ID } from "@/lib/constants";
+import { EVENT_ID } from "@/lib/constants";
 import { addDataSheet, createExportWorkbook, workbookResponse } from "@/lib/excel-workbook";
 import { observeRequest } from "@/lib/observability";
 import { databaseUnavailableResponse, firstSupabaseError } from "@/lib/supabase/results";
@@ -61,10 +61,10 @@ export async function GET(request: Request) {
   const publicOrigin = new URL(request.url).origin;
   const supabase = await createClient();
   const results = await Promise.all([
-    supabase.from("public_need_projections").select("id,category,summary,location_label,status,needed_quantity,covered_quantity,unit,updated_at").eq("event_id", DEMO_EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
-    supabase.from("public_donation_projections").select("public_code,attribution,kind,category,verified_quantity,unit,reconciled_amount,currency,destination_label,operational_state,evidence_level,updated_at").eq("event_id", DEMO_EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
-    supabase.rpc("public_collection_centers", { p_event_id: DEMO_EVENT_ID }),
-    supabase.from("public_metric_snapshots").select("metric_key,value,unit,formula,source_cut_at,timezone,owner_role,dimensions").eq("event_id", DEMO_EVENT_ID).eq("reconciled", true).order("source_cut_at", { ascending: false }),
+    supabase.from("public_need_projections").select("id,category,summary,location_label,status,needed_quantity,covered_quantity,unit,updated_at").eq("event_id", EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
+    supabase.from("public_donation_projections").select("public_code,attribution,kind,category,verified_quantity,unit,reconciled_amount,currency,destination_label,operational_state,evidence_level,updated_at").eq("event_id", EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
+    supabase.rpc("public_collection_centers", { p_event_id: EVENT_ID }),
+    supabase.from("public_metric_snapshots").select("metric_key,value,unit,formula,source_cut_at,timezone,owner_role,dimensions").eq("event_id", EVENT_ID).eq("reconciled", true).order("source_cut_at", { ascending: false }),
   ]);
   const queryError = firstSupabaseError(results);
   if (queryError) return observation.complete(databaseUnavailableResponse("exportacion_transparencia", queryError), "database_unavailable");

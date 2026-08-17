@@ -2,6 +2,7 @@ export type PublicCollectionCenter = {
   id: string;
   name: string;
   locationLabel: string;
+  instructions: string | null;
   accepts: string[];
   restrictedItems: string[];
   coldChainCapable: boolean;
@@ -13,6 +14,7 @@ export type PublicCollectionCenterRow = {
   id: string;
   name: string;
   location_label: string;
+  public_instructions?: string | null;
   accepts: string[] | null;
   restricted_items: string[] | null;
   cold_chain_capable: boolean;
@@ -25,6 +27,7 @@ export function toPublicCollectionCenter(row: PublicCollectionCenterRow): Public
     id: row.id,
     name: row.name,
     locationLabel: row.location_label,
+    instructions: row.public_instructions ?? null,
     accepts: row.accepts ?? [],
     restrictedItems: row.restricted_items ?? [],
     coldChainCapable: row.cold_chain_capable,

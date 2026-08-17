@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Check, Circle, Clock3, MapPinned, Search, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, Clock3, MapPinned, Search, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
 import { labelStatus } from "@/lib/constants";
@@ -9,56 +9,64 @@ import { servesNonProductionData } from "@/lib/environment";
 import { StatusPill } from "./status-pill";
 
 type TrackResult = { code: string; record_type: string; safe_status: string; last_update: string; message: string };
-type JourneyStage = { label: string; description: string; statuses: string[] };
+type JourneyStep = { step: number; stage_key: string; stage_label: string; detail: string; occurred_at: string; related_code: string };
 
 const DEMO_CODE = "NEC-A1B2C3D4E5F60718293A4B5C";
 
-const journeys: Record<string, JourneyStage[]> = {
-  need: [
-    { label: "Reporte recibido", description: "El caso quedó protegido.", statuses: ["reported"] },
-    { label: "Revisión segura", description: "Una organización contrasta los hechos.", statuses: ["in_verification", "observed"] },
-    { label: "Necesidad verificada", description: "Puede coordinarse sin publicar datos sensibles.", statuses: ["verified", "published", "partially_covered"] },
-    { label: "Caso resuelto", description: "La cobertura fue conciliada.", statuses: ["covered", "closed", "validated"] },
-  ],
-  intake: [
-    { label: "Registro recibido", description: "El aporte fue registrado, no recibido.", statuses: ["reported"] },
-    { label: "Verificación", description: "El equipo revisa soporte y condiciones.", statuses: ["pending_verification", "observed"] },
-    { label: "Aporte aprobado", description: "Ya puede coordinarse la recepción.", statuses: ["approved", "scheduled"] },
-    { label: "Custodia confirmada", description: "La recepción física quedó registrada.", statuses: ["received", "stored"] },
-  ],
-  donation: [
-    { label: "Compromiso", description: "El aporte fue aceptado para coordinación.", statuses: ["promised", "scheduled"] },
-    { label: "Recepción", description: "El centro confirmó cantidad y condición.", statuses: ["received", "stored", "allocated"] },
-    { label: "En camino", description: "Existe una salida con custodia registrada.", statuses: ["dispatched", "in_transit"] },
-    { label: "Entrega validada", description: "La entrega fue conciliada con evidencia.", statuses: ["delivered", "validated"] },
-  ],
+// Qué falta después de cada hito confirmado. Se describe el siguiente control, no una
+// promesa de tiempo: el recorrido depende de decisiones humanas, no de un temporizador.
+const NEXT_STEP: Record<string, string> = {
+  need_reported: "Una organización autorizada debe contrastar los hechos antes de publicar el caso.",
+  need_verified: "Falta publicar el caso para que pueda recibir aportes.",
+  need_published: "El caso ya puede recibir aportes. La cobertura avanza cuando se validan entregas.",
+  intake_reported: "El equipo debe revisar los datos y soportes antes de coordinar la recepción.",
+  intake_approved: "Falta que el centro confirme físicamente la recepción.",
+  donation_opened: "Falta que el centro confirme físicamente la recepción.",
+  stock_received: "La existencia está en custodia y espera ser reservada para un caso verificado.",
+  stock_allocated: "Falta crear la salida hacia la zona de destino.",
+  shipment_dispatched: "Falta registrar el resultado de la entrega.",
+  delivery_registered: "Falta la validación de una persona distinta de quien entregó.",
+  delivery_validated: "El recorrido está completo y la cobertura pública ya lo refleja.",
+  money_reconciled: "El aporte quedó conciliado contra un soporte y publicado como monto verificado.",
 };
 
-function journeyIndex(stages: JourneyStage[], status: string) {
-  const index = stages.findIndex((stage) => stage.statuses.includes(status));
-  return index < 0 ? 0 : index;
-}
+const RECORD_LABELS: Record<string, string> = {
+  need: "Necesidad",
+  intake: "Reporte de aporte",
+  donation: "Donación operacional",
+};
 
 export function TrackingForm({ initialCode = "" }: { initialCode?: string }) {
   const [code, setCode] = useState(initialCode);
   const [result, setResult] = useState<TrackResult | null>(null);
+  const [journey, setJourney] = useState<JourneyStep[]>([]);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   async function search(value = code) {
     if (!value) return;
-    setPending(true); setError(""); setResult(null);
+    setPending(true); setError(""); setResult(null); setJourney([]);
     const supabase = createClient();
-    const { data, error: queryError } = await supabase.rpc("track_public_code", { p_tracking_code: value.trim().toUpperCase() });
+    const normalized = value.trim().toUpperCase();
+    // Se consultan a la vez el estado vigente y la cadena de hitos: la primera responde
+    // «en qué punto está» y la segunda «por dónde pasó y cuándo».
+    const [summary, steps] = await Promise.all([
+      supabase.rpc("track_public_code", { p_tracking_code: normalized }),
+      supabase.rpc("track_public_journey", { p_tracking_code: normalized }),
+    ]);
     setPending(false);
-    if (queryError) { setError("No fue posible consultar en este momento."); return; }
-    const row = Array.isArray(data) ? data[0] : null;
+    if (summary.error || steps.error) { setError("No fue posible consultar en este momento."); return; }
+    const row = Array.isArray(summary.data) ? summary.data[0] : null;
     if (!row) { setError("No encontramos un registro con ese código. Revisa cada carácter e intenta de nuevo."); return; }
     setResult(row as TrackResult);
+    setJourney((steps.data ?? []) as JourneyStep[]);
   }
 
-  const stages = result ? (journeys[result.record_type] ?? journeys.need) : journeys.need;
-  const currentStage = result ? journeyIndex(stages, result.safe_status) : 0;
+  const lastStep = journey.at(-1);
+  const nextStep = lastStep ? NEXT_STEP[lastStep.stage_key] : undefined;
+  // Un aporte se sigue con dos códigos: el del reporte y el operacional. Mostrar ambos
+  // evita que el donante crea que su APO dejó de avanzar cuando en realidad avanzó el DON.
+  const relatedCodes = [...new Set(journey.map((step) => step.related_code).filter(Boolean))];
 
   return (
     <div className="tracking-panel">
@@ -70,7 +78,7 @@ export function TrackingForm({ initialCode = "" }: { initialCode?: string }) {
         </div>
         <button className="button button-dark button-block" disabled={pending}><Search size={17} /> {pending ? "Consultando…" : "Ver mi recorrido"}</button>
         {servesNonProductionData && (
-          <button className="tracking-demo" type="button" onClick={() => { setCode(DEMO_CODE); setError(""); setResult(null); }}>
+          <button className="tracking-demo" type="button" onClick={() => { setCode(DEMO_CODE); setError(""); setResult(null); setJourney([]); }}>
             Usar un código de práctica <ArrowRight size={14} />
           </button>
         )}
@@ -86,24 +94,35 @@ export function TrackingForm({ initialCode = "" }: { initialCode?: string }) {
             <StatusPill status={result.safe_status} />
           </header>
 
-          <p className="tracking-intro"><Clock3 size={16} /> Actualizado el {formatDate(result.last_update)}. Mostramos hitos del proceso, nunca la ubicación de personas.</p>
+          <p className="tracking-intro"><Clock3 size={16} /> Actualizado el {formatDate(result.last_update)}. Mostramos hitos comprobados del proceso, nunca la ubicación de personas.</p>
 
-          <ol className="tracking-journey" aria-label="Recorrido del registro">
-            {stages.map((stage, index) => {
-              const completed = index < currentStage;
-              const current = index === currentStage;
-              return (
-                <li className={completed ? "is-complete" : current ? "is-current" : ""} aria-current={current ? "step" : undefined} key={stage.label}>
-                  <span className="tracking-step-icon" aria-hidden="true">{completed ? <Check size={15} /> : <Circle size={11} />}</span>
-                  <div><strong>{stage.label}</strong><p>{stage.description}</p></div>
+          {journey.length > 0 ? (
+            <ol className="tracking-journey" aria-label="Hitos comprobados del recorrido">
+              {journey.map((step) => (
+                <li className="is-complete" key={`${step.stage_key}-${step.occurred_at}`}>
+                  <span className="tracking-step-icon" aria-hidden="true"><Check size={15} /></span>
+                  <div>
+                    <strong>{step.stage_label}</strong>
+                    <p>{step.detail}</p>
+                    <small className="tracking-step-meta">{formatDate(step.occurred_at)}{step.related_code ? ` · ${step.related_code}` : ""}</small>
+                  </div>
                 </li>
-              );
-            })}
-          </ol>
+              ))}
+              {nextStep && (
+                <li className="is-current" aria-current="step">
+                  <span className="tracking-step-icon" aria-hidden="true" />
+                  <div><strong>Siguiente control</strong><p>{nextStep}</p></div>
+                </li>
+              )}
+            </ol>
+          ) : (
+            <p className="tracking-empty-journey">Todavía no hay hitos comprobados para este código. Aparecerán a medida que el equipo autorizado registre cada control.</p>
+          )}
 
           <dl className="tracking-facts">
-            <div><dt>Tipo de registro</dt><dd>{result.record_type === "need" ? "Necesidad" : result.record_type === "intake" ? "Reporte de aporte" : "Donación operacional"}</dd></div>
+            <div><dt>Tipo de registro</dt><dd>{RECORD_LABELS[result.record_type] ?? result.record_type}</dd></div>
             <div><dt>Código consultado</dt><dd>{result.code}</dd></div>
+            {relatedCodes.length > 1 && <div><dt>Códigos del recorrido</dt><dd>{relatedCodes.join(" · ")}</dd></div>}
           </dl>
           <p className="tracking-safe-note"><ShieldCheck size={16} /> {result.message}</p>
         </article>

@@ -4,7 +4,7 @@ import { BadgeCheck, Building2, Clock3, Download, Scale, ShieldCheck } from "luc
 import { TransparencyDashboard, type DashboardDonation, type DashboardNeed } from "@/components/transparency-dashboard";
 import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
-import { DEMO_EVENT_ID, labelStatus } from "@/lib/constants";
+import { EVENT_ID, labelStatus } from "@/lib/constants";
 import { servesNonProductionData } from "@/lib/environment";
 import { formatDate, numberFormat } from "@/lib/format";
 
@@ -59,19 +59,19 @@ export default async function TransparencyPage() {
     supabase
       .from("public_metric_snapshots")
       .select("id,metric_key,value,unit,formula,source_cut_at,timezone,owner_role")
-      .eq("event_id", DEMO_EVENT_ID)
+      .eq("event_id", EVENT_ID)
       .eq("reconciled", true)
       .order("source_cut_at", { ascending: false }),
     supabase
       .from("public_need_projections")
       .select("id,category,summary,location_label,status,needed_quantity,covered_quantity,unit")
-      .eq("event_id", DEMO_EVENT_ID)
+      .eq("event_id", EVENT_ID)
       .eq("published", true)
       .order("updated_at", { ascending: false }),
     supabase
       .from("public_donation_projections")
       .select("public_code,attribution,kind,category,verified_quantity,unit,reconciled_amount,currency,destination_label,operational_state")
-      .eq("event_id", DEMO_EVENT_ID)
+      .eq("event_id", EVENT_ID)
       .eq("published", true)
       .order("updated_at", { ascending: false }),
   ]);

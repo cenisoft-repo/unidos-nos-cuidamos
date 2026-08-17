@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(36);
 
 -- Escenario C: privacidad y fraude se bloquean antes de persistir.
 select ok(public.contains_sensitive_content('Escríbeme al 300 123 4567'), 'C bloquea teléfono');
@@ -38,8 +38,15 @@ create temporary table test_allocation as select public.allocate_stock((select i
 select ok((select id from test_allocation) is not null,'A reserva 90 unidades');
 select throws_ok($$select public.allocate_stock((select id from test_lot),'61000000-0000-0000-0000-000000000001',50,'e2e-g-allocation-over')$$,'22023','Existencia insuficiente','G evita sobreasignación/stock negativo');
 
-create temporary table test_shipment as select public.create_shipment((select id from test_allocation),'Medellín · zona aproximada','Transportador sintético','e2e-a-shipment-001') as id;
-select ok((select id from test_shipment) is not null,'A crea despacho auditable');
+select throws_ok(
+  $$select public.create_shipment((select id from test_allocation),'70000000-0000-0000-0000-000000000001','Medellín · zona aproximada','Transportador sintético','e2e-a-shipment-cross')$$,
+  '42501',
+  'El punto de origen pertenece a otra organización o evento',
+  'A no puede despachar desde un punto de otra organización'
+);
+create temporary table test_shipment as select public.create_shipment((select id from test_allocation),'70000000-0000-0000-0000-000000000003','Medellín · zona aproximada','Transportador sintético','e2e-a-shipment-001') as id;
+select ok((select id from test_shipment) is not null,'A crea despacho auditable desde una base que solo despacha');
+select is((select origin_location_id from public.shipments where id=(select id from test_shipment)),'70000000-0000-0000-0000-000000000003'::uuid,'A conserva desde qué punto salió el despacho');
 select is((select count(*)::integer from public.public_logistics_projections where source_type='dispatch' and source_id=(select id from test_shipment) and published),1,'A proyecta el despacho en el mapa con origen y destino aproximados');
 create temporary table test_delivery as select public.register_delivery((select id from test_shipment),89,1,'e2e-a-delivery-001') as id;
 select ok((select id from test_delivery) is not null,'A registra 89 entregadas y 1 dañada');

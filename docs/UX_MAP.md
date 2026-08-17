@@ -20,7 +20,7 @@ La persona debe poder responder, sin capacitación:
 
 ### Donante o aliado
 
-`Elegir categoría → describir cantidad → definir entrega → registrar contacto privado → recibir ticket/QR → seguir`
+`Elegir categoría y describir cantidad → definir entrega (solo especie) → registrar contacto privado → revisar → recibir ticket/QR → seguir`
 
 ### Operación
 
@@ -37,21 +37,22 @@ La persona debe poder responder, sin capacitación:
 | Home pública | Entender y actuar | Quiero ayudar | Hero humano, foto acreditada y rastreo visible | ✅ Implementado | Validar con usuarios antes de G2 |
 | Necesidades | Elegir dónde ayudar | Donar a una necesidad | Catálogo visual con faltante, avance, ubicación y CTA | ✅ Implementado | Añadir filtros profundos si aumenta el volumen |
 | Mapa territorial | Explorar por lugar | Seleccionar zona, centro o despacho | Cartografía real MapLibre/OpenFreeMap, fallback Leaflet/OSM, PostGIS y Realtime | ✅ Implementado | Validar densidad y proveedor con SLA antes de G2 |
-| Registro de aporte | Registrar una promesa | Continuar al siguiente paso | Flujo de 5 pasos con centro, destinación, perfil, valor estimado y datos internos protegidos | ✅ Implementado | Validar comprensión con aliados |
+| Registro de aporte | Registrar una promesa | Continuar al siguiente paso | Flujo adaptativo: 4 pasos en especie y 3 en dinero. Solo quedan a la vista los campos obligatorios; destinación, valor estimado, cuidado y datos internos viven en bloques opcionales plegados | ✅ Implementado | Validar comprensión con aliados |
 | Ticket del aporte | Guardar y seguir | Seguir mi aporte | Ticket QR, resumen e impresión | ✅ Implementado | Descarga PDF queda fuera del alcance actual |
-| Seguimiento | Comprender el estado | Consultar código | Línea de hitos segura | 🟡 Simplificar | Reforzar microcopy y próximos pasos; no mostrar rutas/personas |
+| Seguimiento | Comprender el estado | Consultar código | Cronología de hitos comprobados con fecha; el código del aporte atraviesa su donación operacional y se nombra el siguiente control | ✅ Implementado | Validar comprensión con donantes reales antes de G2 |
 | Centros de acopio | Elegir punto compatible | Ver qué recibe | RPC segura, tarjetas, mapa y preselección | ✅ Implementado | Horarios reales requieren política y datos aprobados |
 | Reporte ciudadano | Informar hechos | Enviar a verificación | Categorías visuales y campos privados explícitos | ✅ Implementado parcial | Recorrido multipaso opcional tras pruebas de uso |
 | Ingreso | Acceder por rol | Ingresar | Claro y aislado | ✅ Conservar | Reducir lenguaje técnico secundario |
 | Centro operativo | Decidir qué hacer hoy | Resolver prioridad | Lanzador por rol, KPI y pendientes | ✅ Implementado | Validar con operadores antes de G2 |
+| Administración de puntos | Definir dónde se recibe y desde dónde se despacha | Crear/editar punto | `/operaciones/centros`: organización, propósito (acopio, despacho o ambos), privacidad, coordenada, disponibilidad, frío y categorías | ✅ Implementado local | Desplegar solo tras autorización y repetir aislamiento remoto |
 | Recepción | Confirmar custodia | Recibir aporte | Búsqueda por código/categoría, cantidades etiquetadas y centro receptor | ✅ Implementado | Escáner físico requiere dispositivo/política aprobados |
 | Inventario | Reservar existencia | Asignar lote | Tarjetas de lote y necesidades filtradas por categoría/unidad | ✅ Implementado | Validar reglas de compatibilidad con autoridad |
-| Despacho | Crear salida | Despachar | Etapa visible y siguiente acción explícita | ✅ Implementado | Transportador real permanece privado y bloqueado |
+| Despacho | Crear salida | Despachar | Formulario con punto de origen habilitado, zona de destino y transportador privado; el origen queda registrado en el despacho | ✅ Implementado | Transportador real permanece privado y bloqueado |
 | Entrega | Registrar resultado | Confirmar entrega | Etapa móvil, resultado y validación independiente | ✅ Implementado | Evidencia real requiere consentimiento/antimalware |
 | Evidencias | Probar custodia/resultado | Subir evidencia | Bucket privado sin UI dedicada | 🔴 Rediseñar completamente | Componente antes/en tránsito/entrega con permisos explícitos |
 | Transparencia/impacto | Comprobar cifras | Explorar dashboard o descargar Excel | KPI, barras de cobertura, distribución por estado, tabla equivalente y metodología reproducible | ✅ Implementado | Añadir serie temporal y comparación entre eventos cuando existan cortes suficientes |
 | Exportaciones | Analizar sin perder el contrato de datos | Descargar `.xlsx` | Libro público seguro y libro operacional sujeto a sesión/RLS | ✅ Implementado | Incorporar selector de corte cuando exista historial autorizado |
-| Tesorería sandbox | Conciliar o aprobar | Acción segregada del rol | Consola técnica | 🟡 Simplificar | Lenguaje más natural; conservar controles y separación |
+| Tesorería sandbox | Conciliar o aprobar | Acción segregada del rol | Etapas 01 Conciliar → 04 Pagar con sus colas, saldo del libro completo, justificación obligatoria y legible, y explicación de por qué una solicitud propia no ofrece decisión | ✅ Implementado | Validar el vocabulario financiero con tesorería antes de G2 |
 
 ## Arquitectura de información objetivo
 
@@ -77,6 +78,7 @@ La persona debe poder responder, sin capacitación:
   - Despachar
   - Entregar
   - Evidencias
+- Puntos de entrega (solo administración)
 - Pendientes importantes
 - Bodega y logística
 - Tesorería
@@ -109,7 +111,7 @@ La persona debe poder responder, sin capacitación:
 ## Secuencia de implementación
 
 1. ✅ Home humana, catálogo “Hoy hace falta” y acceso universal al rastreo.
-2. ✅ Registro de aporte en cinco pasos y ticket QR.
+2. ✅ Registro de aporte adaptativo (cuatro pasos en especie, tres en dinero) y ticket QR.
 3. ✅ Centros de acopio públicos mediante proyección segura.
 4. ✅ Lanzador, búsqueda de recepción, selección de lote, compatibilidad y etapas logísticas implementados.
 5. ⛔ Evidencias privadas y visualización por etapa permanecen condicionadas a política y consentimiento aprobados.

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
-import { DEMO_EVENT_ID, DEMO_EVENT_SLUG, NEED_CATEGORIES } from "@/lib/constants";
+import { EVENT_ID, EVENT_SLUG, NEED_CATEGORIES } from "@/lib/constants";
 import { numberFormat } from "@/lib/format";
 import { toPublicCollectionCenter, toPublicLogisticsPoint, type PublicCollectionCenterRow, type PublicLogisticsPointRow } from "@/lib/public-types";
 import { CategoryIcon } from "@/components/category-icon";
@@ -50,11 +50,11 @@ function metricValue(value: number | null | undefined) {
 export default async function HomePage() {
   const supabase = await createClient();
   const results = await Promise.all([
-    supabase.from("public_event_dashboard").select("*").eq("slug", DEMO_EVENT_SLUG).maybeSingle(),
-    supabase.from("public_need_projections").select("id,category,summary,location_label,status,needed_quantity,covered_quantity,unit").eq("event_id", DEMO_EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
-    supabase.rpc("public_need_map", { p_event_id: DEMO_EVENT_ID }),
-    supabase.rpc("public_collection_centers", { p_event_id: DEMO_EVENT_ID }),
-    supabase.rpc("public_logistics_map", { p_event_id: DEMO_EVENT_ID }),
+    supabase.from("public_event_dashboard").select("*").eq("slug", EVENT_SLUG).maybeSingle(),
+    supabase.from("public_need_projections").select("id,category,summary,location_label,status,needed_quantity,covered_quantity,unit").eq("event_id", EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
+    supabase.rpc("public_need_map", { p_event_id: EVENT_ID }),
+    supabase.rpc("public_collection_centers", { p_event_id: EVENT_ID }),
+    supabase.rpc("public_logistics_map", { p_event_id: EVENT_ID }),
   ]);
   assertSupabaseSuccess("portada", results);
   const [{ data: dashboard }, { data: needs }, { data: mapNeeds }, { data: centerRows }, { data: logisticsRows }] = results;
@@ -169,7 +169,7 @@ export default async function HomePage() {
             <h2>Explora dónde puedes ayudar</h2>
             <p>Los puntos muestran zonas aproximadas. El azul identifica centros de acopio; los demás colores, necesidades.</p>
           </div>
-          <CoverageExplorer eventId={DEMO_EVENT_ID} needs={mappedNeeds} centers={centers} logistics={logistics} />
+          <CoverageExplorer eventId={EVENT_ID} needs={mappedNeeds} centers={centers} logistics={logistics} />
         </div>
       </section>
 

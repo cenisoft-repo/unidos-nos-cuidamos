@@ -4,14 +4,6 @@ import { login } from "./actions";
 
 export const metadata: Metadata = { title: "Ingreso seguro" };
 
-const PRACTICE_ACCOUNTS = [
-  "admin@rutasolidaria.local",
-  "aliado@rutasolidaria.local",
-  "bodega@rutasolidaria.local",
-  "solicita@rutasolidaria.local",
-  "aprueba@rutasolidaria.local",
-];
-
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
   const params = await searchParams;
 
@@ -41,12 +33,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <input id="password" name="password" type="password" autoComplete="current-password" required />
           </div>
           <button className="button button-dark button-block" type="submit">Ingresar</button>
-          {servesNonProductionData && (
-            <div className="demo-accounts">
-              <strong>Cuentas de práctica</strong>
-              {PRACTICE_ACCOUNTS.map((account) => <code key={account}>{account}</code>)}
-            </div>
-          )}
         </form>
       </section>
     </div>

@@ -10,11 +10,11 @@ import { StatusPill } from "./status-pill";
 import { numberFormat } from "@/lib/format";
 
 type PromiseItem = { id: string; category: string; description: string; quantity_promised: number; quantity_received: number; quantity_rejected: number; unit: string; donations: { donor_tracking_code: string; status: string; organization_id: string } | null };
-type Location = { id: string; name: string; organization_id: string };
+type Location = { id: string; name: string; organization_id: string; accepts_donations: boolean; dispatches_shipments: boolean };
 type Lot = { id: string; lot_code: string; category: string; status: string; quantity_initial: number; unit: string; organization_id: string };
 type NeedItem = { id: string; category: string; quantity_required: number; quantity_covered: number; unit: string; need_cases: { public_location_text: string; status: string } | null };
-type Allocation = { id: string; quantity: number; status: string; inventory_lots: { lot_code: string; category: string; unit: string } | null; need_items: { category: string; need_cases: { public_location_text: string } | null } | null };
-type Shipment = { id: string; shipment_code: string; status: string; public_destination: string; shipment_items: { quantity: number }[] };
+type Allocation = { id: string; quantity: number; status: string; organization_id: string; inventory_lots: { lot_code: string; category: string; unit: string } | null; need_items: { category: string; need_cases: { public_location_text: string } | null } | null };
+type Shipment = { id: string; shipment_code: string; status: string; public_destination: string; origin_location_id: string | null; shipment_items: { quantity: number }[] };
 type Delivery = { id: string; status: string; quantity_delivered: number; quantity_damaged: number; shipments: { shipment_code: string } | null };
 
 export function WarehouseConsole({ promiseItems, locations, lots, needItems, allocations, shipments, deliveries, canValidate }: { promiseItems: PromiseItem[]; locations: Location[]; lots: Lot[]; needItems: NeedItem[]; allocations: Allocation[]; shipments: Shipment[]; deliveries: Delivery[]; canValidate: boolean }) {
@@ -90,11 +90,17 @@ export function WarehouseConsole({ promiseItems, locations, lots, needItems, all
     setPending(""); if (actionError) { setError(toOperationalMessage(actionError)); return; } setMessage("Existencia reservada."); router.refresh();
   }
 
-  async function dispatch(allocation: Allocation) {
+  async function dispatch(allocation: Allocation, form: HTMLFormElement) {
+    const data = new FormData(form);
     setPending(allocation.id); setError("");
-    const publicDestination = allocation.need_items?.need_cases?.public_location_text ?? "Destino territorial aproximado";
-    const { error: actionError } = await supabase.rpc("create_shipment", { p_allocation_id: allocation.id, p_public_destination: publicDestination, p_carrier_name: "Por asignar", p_idempotency_key: crypto.randomUUID() });
-    setPending(""); if (actionError) { setError(toOperationalMessage(actionError)); return; } setMessage("Despacho creado."); router.refresh();
+    const { error: actionError } = await supabase.rpc("create_shipment", {
+      p_allocation_id: allocation.id,
+      p_origin_location_id: String(data.get("origin")),
+      p_public_destination: String(data.get("destination")).trim(),
+      p_carrier_name: String(data.get("carrier") ?? "").trim(),
+      p_idempotency_key: crypto.randomUUID(),
+    });
+    setPending(""); if (actionError) { setError(toOperationalMessage(actionError)); return; } setMessage("Despacho creado con origen y destino registrados."); router.refresh();
   }
 
   async function deliver(shipment: Shipment) {
@@ -143,7 +149,8 @@ export function WarehouseConsole({ promiseItems, locations, lots, needItems, all
           <div className="ops-list">
             {visiblePromiseItems.map((item) => {
               const remaining = Number(item.quantity_promised) - Number(item.quantity_received) - Number(item.quantity_rejected);
-              const validLocations = locations.filter((location) => location.organization_id === item.donations?.organization_id);
+              // Solo los puntos habilitados como acopio pueden recibir custodia física.
+              const validLocations = locations.filter((location) => location.organization_id === item.donations?.organization_id && location.accepts_donations);
               return (
                 <article className="ops-row warehouse-reception" key={item.id}>
                   <div>
@@ -195,16 +202,38 @@ export function WarehouseConsole({ promiseItems, locations, lots, needItems, all
 
       <div className="ops-bottom">
         <section className="ops-panel" id="despachos">
-          <header className="ops-panel-header"><div><h2>Asignaciones listas</h2><p>Siguiente acción: crear el despacho.</p></div></header>
+          <header className="ops-panel-header"><div><h2>Asignaciones listas</h2><p>Indica desde qué punto sale y hacia qué zona.</p></div></header>
           <div className="ops-list">
-            {allocations.map((allocation) => <article className="ops-row" key={allocation.id}><div><h3>{allocation.inventory_lots?.lot_code}</h3><p>{numberFormat.format(allocation.quantity)} {allocation.inventory_lots?.unit} · {allocation.inventory_lots?.category}</p>{allocation.status === "reserved" && <button className="action-button approve" disabled={pending === allocation.id} onClick={() => void dispatch(allocation)}><Send size={12} /> Crear despacho</button>}</div><StatusPill status={allocation.status} /></article>)}
+            {allocations.map((allocation) => {
+              const origins = locations.filter((location) => location.organization_id === allocation.organization_id && location.dispatches_shipments);
+              return <article className="ops-row" key={allocation.id}>
+                <div>
+                  <h3>{allocation.inventory_lots?.lot_code}</h3>
+                  <p>{numberFormat.format(allocation.quantity)} {allocation.inventory_lots?.unit} · {allocation.inventory_lots?.category}</p>
+                  {allocation.status === "reserved" && (origins.length ? (
+                    <form className="inline-form" onSubmit={(event) => { event.preventDefault(); void dispatch(allocation, event.currentTarget); }}>
+                      <label><span>Sale desde</span><select name="origin" required>{origins.map((origin) => <option key={origin.id} value={origin.id}>{origin.name}</option>)}</select></label>
+                      <label><span>Zona de destino</span><input name="destination" defaultValue={allocation.need_items?.need_cases?.public_location_text ?? ""} minLength={3} maxLength={180} required /></label>
+                      <label><span>Transportador</span><input name="carrier" maxLength={160} placeholder="Opcional y privado" /></label>
+                      <button className="action-button approve" disabled={pending === allocation.id}><Send size={12} /> Crear despacho</button>
+                    </form>
+                  ) : (
+                    <p className="ops-inline-warning">Esta organización no tiene ningún punto habilitado para despachar. Actívalo en <a href="/operaciones/centros">Puntos de entrega</a>.</p>
+                  ))}
+                </div>
+                <StatusPill status={allocation.status} />
+              </article>;
+            })}
             {!allocations.length && <p className="ops-empty">Aún no hay existencias reservadas.</p>}
           </div>
         </section>
         <section className="ops-panel">
           <header className="ops-panel-header"><div><h2><Truck size={17} /> Despachos</h2><p>Siguiente acción: registrar el resultado.</p></div></header>
           <div className="ops-list">
-            {shipments.map((shipment) => <article className="ops-row" key={shipment.id}><div><h3>{shipment.shipment_code}</h3><p>{shipment.public_destination}</p>{["dispatched", "in_transit"].includes(shipment.status) && <button className="action-button approve" disabled={pending === shipment.id} onClick={() => void deliver(shipment)}>Registrar entrega</button>}</div><StatusPill status={shipment.status} /></article>)}
+            {shipments.map((shipment) => {
+              const origin = locations.find((location) => location.id === shipment.origin_location_id);
+              return <article className="ops-row" key={shipment.id}><div><h3>{shipment.shipment_code}</h3><p>{origin ? `${origin.name} → ` : ""}{shipment.public_destination}</p>{["dispatched", "in_transit"].includes(shipment.status) && <button className="action-button approve" disabled={pending === shipment.id} onClick={() => void deliver(shipment)}>Registrar entrega</button>}</div><StatusPill status={shipment.status} /></article>;
+            })}
             {!shipments.length && <p className="ops-empty">No hay despachos creados.</p>}
           </div>
         </section>

@@ -79,7 +79,7 @@ La solución cubre cuatro recorridos: **ciudadanía**, **donante/aliado**, **ope
 |---|---|---|
 | Inicio público (catálogo "Hoy hace falta", mapa territorial, centros de acopio, impacto) | `/` | Público |
 | Necesidades / donar a una necesidad | `/` · `/donar` | Público |
-| Registro de aporte en 5 pasos + ticket QR | `/donar` | Público |
+| Registro de aporte adaptativo (4 pasos en especie, 3 en dinero) + ticket QR | `/donar` | Público |
 | Seguimiento por código seguro | `/seguimiento` | Público |
 | Reporte ciudadano privado (con honeypot y cuota antiabuso) | `/reportar` | Público |
 | Transparencia / impacto conciliado + exportación Excel | `/transparencia` | Público |

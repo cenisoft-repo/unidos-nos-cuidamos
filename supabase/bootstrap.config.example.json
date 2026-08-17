@@ -1,0 +1,143 @@
+{
+  "$comentario": [
+    "Declaración del entorno para un despliegue desde cero. Copia este archivo, edítalo y",
+    "pásalo con BOOTSTRAP_CONFIG_PATH a `npm run bootstrap:environment`.",
+    "",
+    "Reglas que el comando hace cumplir:",
+    "- Los identificadores son UUID que tú eliges y que quedan fijos para siempre en esa instancia.",
+    "- Cada punto declara para qué sirve: `acceptsDonations` (centro de acopio, por defecto",
+    "  true) y `dispatchesShipments` (centro de despacho, por defecto false). Un punto que",
+    "  solo despacha no aparece en el mapa público ni se ofrece al aliado, y no lleva `accepts`.",
+    "- `accepts` solo admite categorías del catálogo vigente: Alimentos, Agua, Higiene, Salud,",
+    "  Refugio, Protección, Logística y Otro. Máximo ocho por punto.",
+    "- `publicLocationText` es lo único territorial que se publica. `privateAddress` nunca sale",
+    "  de la base y `latitude`/`longitude` deben ser una coordenada aproximada, no la puerta exacta.",
+    "- Las contraseñas no se declaran aquí: el comando las genera, las verifica y las escribe en",
+    "  un archivo fuera del repositorio."
+  ],
+
+  "event": {
+    "id": "10000000-0000-0000-0000-000000000001",
+    "slug": "simulacion-andina-2026",
+    "name": "Simulación sísmica · Región Andina",
+    "publicSummary": "Ejercicio con información ficticia para probar coordinación, trazabilidad y transparencia segura.",
+    "startsAt": "2026-08-13T08:00:00-05:00",
+    "timezone": "America/Bogota",
+    "simulated": true
+  },
+
+  "organizations": [
+    {
+      "key": "coordinacion",
+      "id": "20000000-0000-0000-0000-000000000001",
+      "name": "Red Humanitaria Demo",
+      "slug": "red-humanitaria-demo"
+    },
+    {
+      "key": "aliado",
+      "id": "20000000-0000-0000-0000-000000000002",
+      "name": "Aliados Unidos Demo",
+      "slug": "aliados-unidos-demo"
+    }
+  ],
+
+  "accounts": [
+    {
+      "key": "admin",
+      "email": "admin@ejemplo.invalid",
+      "fullName": "Coordinación del evento",
+      "memberships": [
+        { "organization": "coordinacion", "roles": ["event_admin", "verifier", "auditor"] },
+        { "organization": "aliado", "roles": ["event_admin", "verifier"] }
+      ]
+    },
+    {
+      "key": "aliado",
+      "email": "aliado@ejemplo.invalid",
+      "fullName": "Aliado que reporta aportes",
+      "memberships": [
+        { "organization": "aliado", "roles": ["partner_reporter"] }
+      ]
+    },
+    {
+      "key": "bodega",
+      "email": "bodega@ejemplo.invalid",
+      "fullName": "Bodega y logística",
+      "memberships": [
+        { "organization": "coordinacion", "roles": ["warehouse_operator", "logistics_operator"] },
+        { "organization": "aliado", "roles": ["warehouse_operator", "logistics_operator"] }
+      ]
+    },
+    {
+      "key": "solicita",
+      "email": "solicita@ejemplo.invalid",
+      "fullName": "Solicitudes de gasto",
+      "memberships": [
+        { "organization": "coordinacion", "roles": ["treasury_requester"] }
+      ]
+    },
+    {
+      "key": "aprueba",
+      "email": "aprueba@ejemplo.invalid",
+      "fullName": "Aprobación financiera",
+      "memberships": [
+        { "organization": "coordinacion", "roles": ["treasury_approver"] }
+      ]
+    }
+  ],
+
+  "deliveryPoints": [
+    {
+      "organization": "coordinacion",
+      "name": "Centro de acopio Norte",
+      "publicLocationText": "Medellín · zona norte aproximada",
+      "privateAddress": "Dirección exacta administrada por la organización",
+      "publicInstructions": "Recepción de lunes a sábado. Presenta el código APO al llegar.",
+      "latitude": 6.267,
+      "longitude": -75.56,
+      "coldChainCapable": false,
+      "active": true,
+      "acceptsDonations": true,
+      "dispatchesShipments": true,
+      "accepts": ["Agua", "Alimentos", "Higiene", "Refugio", "Logística"]
+    },
+    {
+      "organization": "coordinacion",
+      "name": "Base logística Sur",
+      "publicLocationText": "Medellín · zona sur aproximada",
+      "privateAddress": "Dirección exacta administrada por la organización",
+      "latitude": 6.198,
+      "longitude": -75.585,
+      "coldChainCapable": false,
+      "active": true,
+      "acceptsDonations": false,
+      "dispatchesShipments": true,
+      "accepts": []
+    },
+    {
+      "organization": "aliado",
+      "name": "Centro de acopio Centro",
+      "publicLocationText": "Manizales · zona centro aproximada",
+      "privateAddress": "Dirección exacta administrada por la organización",
+      "publicInstructions": "Recepción en jornada continua. Los artículos deben llegar sellados.",
+      "latitude": 5.066,
+      "longitude": -75.507,
+      "coldChainCapable": true,
+      "active": true,
+      "acceptsDonations": true,
+      "dispatchesShipments": true,
+      "accepts": ["Agua", "Alimentos", "Higiene", "Salud", "Protección"]
+    }
+  ],
+
+  "funds": [
+    {
+      "organization": "coordinacion",
+      "id": "80000000-0000-0000-0000-000000000001",
+      "name": "Fondo de respuesta",
+      "currency": "COP",
+      "verified": true,
+      "restrictions": "Ejercicio sin recaudo, pagos ni movimientos financieros reales."
+    }
+  ]
+}
