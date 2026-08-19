@@ -16,7 +16,10 @@
  *
  * Uso (PowerShell):
  *   $env:DEMO_PROJECT_REF = '<ref del proyecto>'
- *   $env:DEMO_PASSWORD    = '<contrasena de las cuentas del sandbox>'
+ *   $env:DEMO_PASSWORD    = '<contrasena comun>'
+ *
+ * Si cada cuenta tiene la suya, en vez de DEMO_PASSWORD:
+ *   $env:DEMO_ALLY_PASSWORD / DEMO_ADMIN_PASSWORD / DEMO_WAREHOUSE_PASSWORD
  *   node scripts/seed-demo-journey.mjs
  *
  * La clave publicable la obtiene el script del CLI de Supabase para no tener que pegarla:
@@ -57,7 +60,9 @@ if (ref && !key) {
   key = claveDelProyecto(ref);
 }
 
-if (!url || !key || !password) {
+const hayAlgunaClave = password
+  || (process.env.DEMO_ALLY_PASSWORD && process.env.DEMO_ADMIN_PASSWORD && process.env.DEMO_WAREHOUSE_PASSWORD);
+if (!url || !key || !hayAlgunaClave) {
   console.error("Falta configuración. Usa una de las dos formas:");
   console.error("  DEMO_PROJECT_REF=<ref> DEMO_PASSWORD=<clave>            (recomendado: toma la clave del CLI)");
   console.error("  DEMO_SUPABASE_URL=<url> DEMO_SUPABASE_KEY=<clave publicable> DEMO_PASSWORD=<clave>");
@@ -71,10 +76,24 @@ if (!/^[ -~]+$/.test(key)) {
   process.exit(1);
 }
 
+/*
+ * Cada cuenta puede tener su propia contrasena. En un proyecto provisionado desde cero no
+ * tienen por que compartirla, y obligar a igualarlas solo para poder sembrar seria pedir
+ * que se debilite el entorno para comodidad de una herramienta.
+ */
 const CUENTAS = {
-  aliado: process.env.DEMO_ALLY ?? "aliado@rutasolidaria.local",
-  admin: process.env.DEMO_ADMIN ?? "admin@rutasolidaria.local",
-  bodega: process.env.DEMO_WAREHOUSE ?? "bodega@rutasolidaria.local",
+  aliado: {
+    email: process.env.DEMO_ALLY ?? "aliado@rutasolidaria.local",
+    password: process.env.DEMO_ALLY_PASSWORD ?? password,
+  },
+  admin: {
+    email: process.env.DEMO_ADMIN ?? "admin@rutasolidaria.local",
+    password: process.env.DEMO_ADMIN_PASSWORD ?? password,
+  },
+  bodega: {
+    email: process.env.DEMO_WAREHOUSE ?? "bodega@rutasolidaria.local",
+    password: process.env.DEMO_WAREHOUSE_PASSWORD ?? password,
+  },
 };
 
 const TRANSPORTE = {
@@ -94,10 +113,13 @@ let fallos = 0;
 const anotar = (etapa, hechos) => { resumen.push({ etapa, hechos }); console.log(`  ${hechos ? "ok" : "--"} ${etapa}: ${hechos}`); };
 const fallar = (donde, error) => { fallos += 1; console.error(`  !! ${donde}: ${error?.message ?? error}`); };
 
-async function sesion(email) {
+async function sesion(cuenta) {
+  if (!cuenta.password) {
+    throw new Error(`falta la contrasena de ${cuenta.email}: usa DEMO_PASSWORD o la variable propia de esa cuenta`);
+  }
   const cliente = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { error } = await cliente.auth.signInWithPassword({ email, password });
-  if (error) throw new Error(`no se pudo entrar como ${email}: ${error.message}`);
+  const { error } = await cliente.auth.signInWithPassword({ email: cuenta.email, password: cuenta.password });
+  if (error) throw new Error(`no se pudo entrar como ${cuenta.email}: ${error.message}`);
   return cliente;
 }
 
