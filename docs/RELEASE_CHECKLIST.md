@@ -109,6 +109,41 @@ eso vive en el panel.
    select public.grant_super_admin('correo@dominio', '<organization_id>', '<event_id>', 'Motivo de la concesión');
    ```
 
+## Si el CLI no puede conectarse (2026-08-19)
+
+Síntoma: `db dump`, `db push` y `migration list` fallan con
+`server closed the connection unexpectedly` contra
+`aws-0-ca-central-1.pooler.supabase.com:5432`.
+
+**No es la contraseña ni el proyecto.** Comprobado desde este equipo:
+
+| Prueba | Resultado |
+|---|---|
+| `aws-0…:6543`, tenant real, contraseña deliberadamente falsa | `FATAL: password authentication failed` — respuesta limpia |
+| `aws-0…:5432`, tenant **inexistente** | conexión cerrada de golpe |
+| `aws-1…:6543`, tenant real | `tenant/user not found` — confirma que el proyecto vive en `aws-0` |
+| `aws-1…:5432`, cualquier tenant | conexión cerrada de golpe |
+
+El 6543 llega hasta la autenticación; el 5432 muere antes de resolver el tenant, en dos
+hosts distintos. El TCP sí completa (`Test-NetConnection` da `True`), así que no es un
+puerto cerrado: algo en la salida a internet acepta la conexión y la corta en cuanto ve
+tráfico Postgres por el 5432. Descartados además, por consulta al proyecto:
+restricciones de red (`0.0.0.0/0`), bans de IP (ninguno) y SSL forzado (desactivado).
+
+Las migraciones necesitan sesión, y el pooler de sesión es justamente el 5432. El de
+transacción (6543) no sirve para `db push`.
+
+Salidas, en orden de menor fricción:
+
+1. **Otra red.** Un anclaje desde el móvil o una VPN evita el intermediario. Es lo único
+   que no exige cambiar nada del proyecto.
+2. **Aplicarlas desde CI.** Un `workflow_dispatch` que ejecute `supabase db push` desde
+   GitHub Actions sale por una red sin ese filtro, y la contraseña vive en los secretos
+   del repositorio en vez de en una terminal.
+3. **Editor SQL del panel.** Funciona sobre HTTPS, pero hay que pegar las diez
+   migraciones en orden y después el historial de `supabase_migrations` queda
+   desincronizado con el repositorio; solo como último recurso.
+
 ## Comprobaciones posteriores
 
 - `npx supabase migration list --linked` muestra 38 aplicadas y ninguna pendiente.
