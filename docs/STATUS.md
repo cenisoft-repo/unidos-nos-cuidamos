@@ -324,10 +324,30 @@ workflow de despliegue encadena ambos pasos en un solo trabajo.
 
 | Qué | Por qué no lo resuelve el despliegue |
 |---|---|
-| Habilitar registro y confirmación de correo en el panel de Auth | `db push` no toca la configuración de Auth. Sin esto `/registro` acepta el formulario y la activación nunca llega. **No usar `supabase config push`**: `config.toml` declara `site_url` en localhost |
+| ~~Habilitar registro y confirmación de correo~~ **comprobado el 2026-08-19** | `GET /auth/v1/settings` del proyecto devuelve `disable_signup: false` y `mailer_autoconfirm: false`: el alta está abierta y la confirmación es obligatoria. Queda por mirar en el panel que el **Site URL** apunte al dominio de producción y no a localhost, porque de él cuelga el enlace del correo de confirmación y no se puede comprobar desde fuera |
 | ~~Conceder la autoridad global~~ **hecho el 2026-08-19** | Concedida a `gestorti2@cenisoft.org` con `grant_super_admin` desde el editor SQL, sobre una cuenta creada para ello. No se usó ninguna de las cinco cuentas sintéticas: la contraseña de esas vive en `supabase/seed.sql`, y el permiso más alto del sistema no puede depender de una clave versionada |
 | Rotar la contraseña de la base | Quedó expuesta durante la operación |
 | Repetir el arnés de simulación remota | Cierra `G-022` globalmente |
+
+## Verificación del 2026-08-19, contra el proyecto real
+
+No por los registros del despliegue, sino sondeando producción desde fuera. El sondeo se
+calibró antes de usarlo: una función inexistente devuelve `404`, una que existe pero
+exige sesión devuelve `401` y una pública devuelve `200`, así que el `401` es prueba de
+existencia y no de fallo.
+
+| Qué se comprobó | Resultado |
+|---|---|
+| `is_super_admin`, `parameterizable_catalogs`, `my_ally_registration`, `activate_ally_registration` | 401 · existen |
+| `ally_registrations`, `need_items`, `need_item_positions`, `inventory_lot_positions`, `transfer_requests`, `membership_locations`, `organization_verifications` | 401 · existen |
+| Tabla inventada de control | 404 · el sondeo distingue de verdad |
+| `submit_donation_intake_v2` con 17 parámetros | 401 · existe |
+| `submit_donation_intake_v2` con los 16 viejos | 404 · **retirada**, el cambio de contrato ocurrió |
+| `submit_donation_intake_v2_catalogs_v1` | 404 · la limpieza se aplicó |
+| Nueve rutas públicas | 200 |
+| Seis consolas sin sesión | 307 a ingreso |
+| `/api/exports/operations.xlsx` sin sesión | 401 |
+| Autoridad global | concedida, activa, correo confirmado |
 
 ## Lo que este despliegue no cambia
 
