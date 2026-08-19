@@ -166,6 +166,7 @@ async function submitIntake(kind, extra) {
     p_reporting_context: {},
     p_catalog_versions: versions,
     p_declared_category_code: kind === "money" ? "apoyo_economico_recursos" : null,
+    p_need_case_id: extra.needCaseId ?? null,
   }));
   return Array.isArray(rows) ? rows[0] : rows;
 }

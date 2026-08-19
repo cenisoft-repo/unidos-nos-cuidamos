@@ -453,6 +453,7 @@ async function main() {
       },
       p_catalog_versions: catalogVersions,
       p_declared_category_code: moneyCategory.value,
+      p_need_case_id: null,
     };
     const moneyIntake = valueOf(success("registro económico", await partner.rpc("submit_donation_intake_v2", moneyPayload)));
     const repeatedMoneyIntake = valueOf(success("reintento económico", await partner.rpc("submit_donation_intake_v2", moneyPayload)));
@@ -548,6 +549,7 @@ async function main() {
       }],
       p_preferred_location_id: COORDINATION_CENTER_ID,
       p_declared_category_code: null,
+      p_need_case_id: null,
     };
     const crossCenterAttempt = await partner.rpc("submit_donation_intake_v2", crossCenterPayload);
     if (!crossCenterAttempt.error) {

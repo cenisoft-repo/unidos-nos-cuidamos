@@ -28,7 +28,26 @@ import type { PublicCollectionCenter } from "@/lib/public-types";
 import { sha256Hex, validateIntakePhotos } from "@/lib/intake-photo-evidence";
 import { CategoryIcon } from "./category-icon";
 
+export type NeedHelpItem = {
+  needItemId: string;
+  category: string;
+  description: string;
+  unit: string;
+  quantityRequested: number;
+  quantityCommitted: number;
+  quantityPending: number;
+};
+
+export type NeedHelpTarget = {
+  needCaseId: string;
+  trackingCode: string;
+  summary: string;
+  locationLabel: string;
+  items: NeedHelpItem[];
+};
+
 type Item = {
+  need_item_id?: string;
   category: string;
   category_code: string;
   description: string;
@@ -113,21 +132,41 @@ export function DonationIntakeForm({
   centers,
   initialCenterId,
   catalogs,
+  need,
 }: {
   organizationId: string;
   organizationName: string;
   centers: PublicCollectionCenter[];
   initialCenterId?: string;
   catalogs: DonationFlowCatalogs;
+  need?: NeedHelpTarget;
 }) {
   const inKindCategories = catalogs.donationCategories.filter((category) => category.kind === "in_kind");
   const moneyCategory = catalogs.donationCategories.find((category) => category.kind === "money");
   const initialStatus = catalogs.declaredStatuses.find((status) => status.value === "comprometida")?.value
     ?? catalogs.declaredStatuses[0]?.value
     ?? "comprometida";
+  // Llegar por AYUDAR precarga exactamente lo que le falta a la necesidad. El aliado puede
+  // bajar la cantidad (aporte parcial) y agregar otros artículos en la misma operación.
+  const needSeedItems: Item[] = (need?.items ?? [])
+    .filter((needItem) => needItem.quantityPending > 0)
+    .map((needItem) => {
+      const catalogMatch = inKindCategories.find((category) => category.parentCategory === needItem.category);
+      return {
+        need_item_id: needItem.needItemId,
+        category: needItem.category,
+        category_code: catalogMatch?.value ?? "",
+        description: needItem.description || needItem.category,
+        quantity: String(needItem.quantityPending),
+        unit: needItem.unit,
+        condition: "sellado",
+        storage_requirement: "ambiente",
+        declared_estimated_value_cop: "",
+      };
+    });
   const [stepId, setStepId] = useState<StepId>("aporte");
   const [kind, setKind] = useState<"in_kind" | "money">("in_kind");
-  const [items, setItems] = useState<Item[]>([blankItem()]);
+  const [items, setItems] = useState<Item[]>(needSeedItems.length ? needSeedItems : [blankItem()]);
   const [declaredAmount, setDeclaredAmount] = useState("");
   const [declaredStatus, setDeclaredStatus] = useState(initialStatus);
   const [preferredLocationId, setPreferredLocationId] = useState(
@@ -179,6 +218,8 @@ export function DonationIntakeForm({
     donor.phone || reporting.donorType || reporting.economicSector || reporting.reportingAlly
     || reporting.internalResponsible || reporting.internalContact || reporting.observations,
   );
+
+  const pendingByNeedItem = new Map((need?.items ?? []).map((needItem) => [needItem.needItemId, needItem.quantityPending]));
 
   function categoryByCode(categoryCode: string) {
     return inKindCategories.find((category) => category.value === categoryCode);
@@ -232,6 +273,8 @@ export function DonationIntakeForm({
       if (items.some((item) => item.description.trim().length < 3)) return "Describe cada artículo: al menos tres caracteres.";
       if (items.some((item) => Number(item.quantity) <= 0 || !item.unit)) return "Escribe la cantidad y la unidad de cada artículo.";
       if (items.some((item) => item.declared_estimated_value_cop && Number(item.declared_estimated_value_cop) <= 0)) return "El valor estimado debe ser mayor que cero o quedar vacío.";
+      const overCommitted = items.find((item) => item.need_item_id && Number(item.quantity) > (pendingByNeedItem.get(item.need_item_id) ?? 0));
+      if (overCommitted) return `A esa necesidad solo le faltan ${pendingByNeedItem.get(overCommitted.need_item_id ?? "") ?? 0} ${overCommitted.unit}.`;
       return "";
     }
     if (currentStep === "entrega") {
@@ -321,6 +364,7 @@ export function DonationIntakeForm({
       },
       p_catalog_versions: catalogs.versions,
       p_declared_category_code: kind === "money" ? moneyCategory?.value ?? "" : null,
+      p_need_case_id: kind === "in_kind" ? need?.needCaseId ?? null : null,
     });
     if (submitError) {
       setPending(false);
@@ -432,23 +476,35 @@ export function DonationIntakeForm({
           <section aria-labelledby="donation-step-title-aporte">
             <h3 id="donation-step-title-aporte">¿Qué vas a aportar?</h3>
             <p className="step-help">Elige el tipo de ayuda y cuéntanos qué es. Nada se publica hasta que el equipo lo verifique.</p>
+            {need && (
+              <div className="need-help-banner">
+                <HeartHandshake size={22} aria-hidden="true" />
+                <div>
+                  <strong>Estás ayudando a la necesidad {need.trackingCode}</strong>
+                  <span>{need.summary} · {need.locationLabel}</span>
+                  <small>Puedes aportar una parte de lo que falta y agregar otros artículos en el mismo registro.</small>
+                </div>
+              </div>
+            )}
             <div className="donation-kind-grid">
               <button className={kind === "in_kind" ? "is-selected" : ""} type="button" aria-pressed={kind === "in_kind"} onClick={() => { setKind("in_kind"); setStepError(""); }}><PackageCheck size={25} /><strong>Bienes en especie</strong><span>Agua, alimentos, higiene y otros artículos.</span></button>
-              <button className={kind === "money" ? "is-selected" : ""} type="button" aria-pressed={kind === "money"} onClick={() => { setKind("money"); setStepError(""); }}><Banknote size={25} /><strong>Aporte económico</strong><span>Solo registro; este canal no procesa pagos.</span></button>
+              {/* Una necesidad puntual se cubre con bienes; el aporte económico no se registra contra ella. */}
+              {!need && <button className={kind === "money" ? "is-selected" : ""} type="button" aria-pressed={kind === "money"} onClick={() => { setKind("money"); setStepError(""); }}><Banknote size={25} /><strong>Aporte económico</strong><span>Solo registro; este canal no procesa pagos.</span></button>}
             </div>
 
             {kind === "in_kind" ? <>
-              <h3 className="substep-title">Elige la categoría</h3>
-              <div className="category-choice-grid">{inKindCategories.map((category) => <button className={items[0]?.category_code === category.value ? "is-selected" : ""} type="button" aria-pressed={items[0]?.category_code === category.value} onClick={() => selectCategory(category)} key={category.value}><CategoryIcon category={category.parentCategory ?? category.label} size={23} /><span>{category.label}</span></button>)}</div>
+              {!need && <><h3 className="substep-title">Elige la categoría</h3>
+              <div className="category-choice-grid">{inKindCategories.map((category) => <button className={items[0]?.category_code === category.value ? "is-selected" : ""} type="button" aria-pressed={items[0]?.category_code === category.value} onClick={() => selectCategory(category)} key={category.value}><CategoryIcon category={category.parentCategory ?? category.label} size={23} /><span>{category.label}</span></button>)}</div></>}
               {items[0]?.category_code && <>
                 <h3 className="substep-title">Describe la ayuda</h3>
                 {items.map((item, index) => (
                   <div className="item-editor" key={index}>
                     <div className="item-editor-top"><strong>Artículo {index + 1} · {categoryByCode(item.category_code)?.label ?? "Sin categoría"}</strong>{items.length > 1 && <button className="text-button" type="button" onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={13} /> Quitar</button>}</div>
+                    {item.need_item_id && <p className="item-need-note"><HeartHandshake size={13} aria-hidden="true" /> Comprometido con {need?.trackingCode}: faltan {pendingByNeedItem.get(item.need_item_id) ?? 0} {item.unit}. La categoría y la unidad las fija la necesidad.</p>}
                     {/* La categoría del primer artículo se elige con las tarjetas de arriba; solo los adicionales necesitan su propio selector. */}
-                    {items.length > 1 && <div className="field"><label htmlFor={`category-${index}`}>Categoría <span aria-hidden="true">*</span></label><select id={`category-${index}`} value={item.category_code} onChange={(event) => updateItemCategory(index, event.target.value)} required><option value="" disabled>Selecciona</option>{inKindCategories.map((category) => <option value={category.value} key={category.value}>{category.label}</option>)}</select></div>}
+                    {items.length > 1 && !item.need_item_id && <div className="field"><label htmlFor={`category-${index}`}>Categoría <span aria-hidden="true">*</span></label><select id={`category-${index}`} value={item.category_code} onChange={(event) => updateItemCategory(index, event.target.value)} required><option value="" disabled>Selecciona</option>{inKindCategories.map((category) => <option value={category.value} key={category.value}>{category.label}</option>)}</select></div>}
                     <div className="field"><label htmlFor={`description-${index}`}>¿Qué es? <span aria-hidden="true">*</span></label><input id={`description-${index}`} value={item.description} onChange={(event) => updateItem(index, "description", event.target.value)} placeholder="Ej. botellas de agua selladas de 1 litro" minLength={3} maxLength={500} required /></div>
-                    <div className="field-grid"><div className="field"><label htmlFor={`quantity-${index}`}>Cantidad <span aria-hidden="true">*</span></label><input id={`quantity-${index}`} type="number" min="0.001" step="0.001" value={item.quantity} onChange={(event) => updateItem(index, "quantity", event.target.value)} required /></div><div className="field"><label htmlFor={`unit-${index}`}>Unidad <span aria-hidden="true">*</span></label><select id={`unit-${index}`} value={item.unit} onChange={(event) => updateItem(index, "unit", event.target.value)} required><option value="" disabled>Selecciona</option>{catalogs.units.map((value) => <option value={value} key={value}>{value}</option>)}</select></div></div>
+                    <div className="field-grid"><div className="field"><label htmlFor={`quantity-${index}`}>Cantidad <span aria-hidden="true">*</span></label><input id={`quantity-${index}`} type="number" min="0.001" step="0.001" max={item.need_item_id ? pendingByNeedItem.get(item.need_item_id) : undefined} value={item.quantity} onChange={(event) => updateItem(index, "quantity", event.target.value)} required /></div><div className="field"><label htmlFor={`unit-${index}`}>Unidad <span aria-hidden="true">*</span></label><select id={`unit-${index}`} value={item.unit} onChange={(event) => updateItem(index, "unit", event.target.value)} required disabled={Boolean(item.need_item_id)}><option value="" disabled>Selecciona</option>{catalogs.units.map((value) => <option value={value} key={value}>{value}</option>)}</select></div></div>
                     <OptionalBlock label="Estado, cuidado y valor estimado" hint="Por defecto: sellado, a temperatura ambiente" defaultOpen={Boolean(item.declared_estimated_value_cop) || item.condition !== "sellado" || item.storage_requirement !== "ambiente"}>
                       <div className="field-grid"><div className="field"><label htmlFor={`condition-${index}`}>Estado</label><select id={`condition-${index}`} value={item.condition} onChange={(event) => updateItem(index, "condition", event.target.value)}><option value="sellado">Sellado</option><option value="nuevo">Nuevo</option><option value="abierto">Abierto (no se recibe)</option><option value="vencido">Vencido (no se recibe)</option></select></div><div className="field"><label htmlFor={`storage-${index}`}>Cuidado especial</label><select id={`storage-${index}`} value={item.storage_requirement} onChange={(event) => updateItem(index, "storage_requirement", event.target.value)}><option value="ambiente">Ambiente</option><option value="frio">Cadena de frío</option><option value="seco">Lugar seco</option></select></div></div>
                       <div className="field"><label htmlFor={`estimated-value-${index}`}>Valor estimado del artículo (COP)</label><input id={`estimated-value-${index}`} type="number" min="1" step="1" value={item.declared_estimated_value_cop} onChange={(event) => updateItem(index, "declared_estimated_value_cop", event.target.value)} placeholder="Ej. 250000" /><small>Es una referencia declarada: no crea un ingreso financiero ni una cifra pública.</small></div>

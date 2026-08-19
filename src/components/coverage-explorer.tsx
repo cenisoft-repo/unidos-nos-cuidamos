@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FeatureCollection, LineString, Point } from "geojson";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import type { LayerGroup as LeafletLayerGroup, Map as LeafletMap } from "leaflet";
-import { Activity, LockKeyhole, MapPin, Route, Truck, Warehouse, Wifi, WifiOff } from "lucide-react";
+import { Activity, HeartHandshake, LockKeyhole, MapPin, Route, Truck, Warehouse, Wifi, WifiOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { numberFormat } from "@/lib/format";
 import { labelStatus } from "@/lib/constants";
@@ -21,7 +21,9 @@ export type CoverageNeed = {
   summary: string;
   locationLabel: string;
   status: string;
+  projectionId: string;
   neededQuantity: number;
+  committedQuantity: number;
   coveredQuantity: number;
   unit: string;
   latitude: number | null;
@@ -36,6 +38,7 @@ type PublicMapRow = {
   location_label: string;
   status: string;
   needed_quantity: number;
+  committed_quantity: number;
   covered_quantity: number;
   unit: string;
   latitude: number;
@@ -79,7 +82,9 @@ function toCoverageNeed(row: PublicMapRow): CoverageNeed {
     summary: row.summary,
     locationLabel: row.location_label,
     status: row.status,
+    projectionId: row.id,
     neededQuantity: Number(row.needed_quantity),
+    committedQuantity: Number(row.committed_quantity),
     coveredQuantity: Number(row.covered_quantity),
     unit: row.unit,
     latitude: row.latitude === null ? null : Number(row.latitude),
@@ -660,6 +665,8 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
             <div className={styles.coverageHead}><strong>{progress}%</strong><span>cubierto</span></div>
             <div className={styles.progress} aria-label={`${progress}% cubierto`}><span style={{ width: `${progress}%` }} /></div>
             <span>{numberFormat.format(selected.coveredQuantity)} de {numberFormat.format(selected.neededQuantity)} {selected.unit}</span>
+            <span>Comprometido {numberFormat.format(selected.committedQuantity)} · pendiente {numberFormat.format(Math.max(selected.neededQuantity - selected.committedQuantity, 0))} {selected.unit}</span>
+            <a className={styles.helpAction} href={`/donar?necesidad=${selected.projectionId}`}><HeartHandshake size={15} /> Ayudar con esta necesidad</a>
           </div>
         </article>
       ) : <div className={styles.empty}>No hay necesidades públicas vigentes para este filtro.</div>}

@@ -36,7 +36,7 @@ select has_column('public', 'donation_intakes', 'internal_contact_private', 'El 
 select has_column('public', 'donation_intakes', 'observations_private', 'Las observaciones operativas permanecen privadas');
 select has_column('public', 'donation_intake_items', 'declared_estimated_value_cop', 'Cada artículo puede conservar un valor declarado no conciliado');
 select has_function('public', 'submit_donation_intake', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric','uuid','jsonb'], 'Existe intake guiado con contexto de reporte privado');
-select has_function('public', 'submit_donation_intake_v2', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric','uuid','jsonb','jsonb','text'], 'Existe intake validado contra catálogos y centro');
+select has_function('public', 'submit_donation_intake_v2', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric','uuid','jsonb','jsonb','text','uuid'], 'Existe intake validado contra catálogos, centro y necesidad');
 select has_column('public', 'donation_intakes', 'reporting_ally_code', 'El intake conserva el aliado declarado solo como referencia');
 select has_table('public', 'donation_intake_evidence', 'Existe el vínculo privado de fotografías del intake');
 select has_function('public', 'prepare_intake_photo_evidence', array['uuid','text','text','bigint','text'], 'Existe RPC segura para reservar evidencia fotográfica');
@@ -54,7 +54,7 @@ select ok(has_function_privilege('authenticated','public.manage_delivery_point(u
 select ok(not has_function_privilege('anon','public.manage_delivery_point(uuid,uuid,uuid,text,text,text,text,numeric,numeric,boolean,boolean,boolean,boolean,text[],text)','EXECUTE'), 'El visitante no puede parametrizar puntos');
 select ok(not has_function_privilege('anon','public.organization_delivery_points(uuid,uuid)','EXECUTE'), 'El visitante no consulta la selección privada por organización');
 select ok(not has_function_privilege('authenticated','public.submit_donation_intake(uuid,uuid,public.donation_kind,text,text,jsonb,text,text,boolean,text,jsonb,numeric,uuid,jsonb)','EXECUTE'), 'La aplicación autenticada no puede saltarse el contrato catalogado anterior');
-select ok(has_function_privilege('authenticated','public.submit_donation_intake_v2(uuid,uuid,public.donation_kind,text,text,jsonb,text,text,boolean,text,jsonb,numeric,uuid,jsonb,jsonb,text)','EXECUTE'), 'La aplicación autenticada ejecuta únicamente el intake catalogado');
+select ok(has_function_privilege('authenticated','public.submit_donation_intake_v2(uuid,uuid,public.donation_kind,text,text,jsonb,text,text,boolean,text,jsonb,numeric,uuid,jsonb,jsonb,text,uuid)','EXECUTE'), 'La aplicación autenticada ejecuta únicamente el intake catalogado');
 select ok(has_function_privilege('authenticated','public.prepare_intake_photo_evidence(uuid,text,text,bigint,text)','EXECUTE'), 'El usuario autenticado puede reservar una fotografía mediante la RPC');
 select ok(has_function_privilege('authenticated','public.confirm_intake_photo_evidence(uuid)','EXECUTE'), 'El usuario autenticado puede confirmar una fotografía mediante la RPC');
 select ok(not has_table_privilege('anon','public.donation_intake_evidence','SELECT'), 'El visitante no puede leer vínculos fotográficos privados');
@@ -175,7 +175,7 @@ select throws_ok(
     '[{"category":"Agua","category_code":"agua_potable","description":"Agua sintética sellada","quantity":1,"unit":"litro","condition":"sellado","storage_requirement":"ambiente"}]'::jsonb,
     null, '70000000-0000-0000-0000-000000000001',
     '{"specific_destination":false}'::jsonb,
-    public.current_donation_catalog_versions(), null
+    public.current_donation_catalog_versions(), null, null
   )$$,
   '22023',
   'Selecciona un punto de entrega activo de tu organización',
@@ -198,6 +198,7 @@ select * from public.submit_donation_intake_v2(
   '70000000-0000-0000-0000-000000000002',
   '{"donor_type":"cooperativa","economic_sector":"logistica_transporte","reporting_ally":"propacifico","specific_destination":false,"internal_contact":{}}'::jsonb,
   public.current_donation_catalog_versions(),
+  null,
   null
 );
 select ok((select intake_id from test_catalogued_intake) is not null, 'El intake catalogado registra el aporte compatible');
@@ -237,7 +238,7 @@ select throws_ok(
     '[{"category":"Logística","category_code":"combustible","description":"Artículo sintético","quantity":1,"unit":"unidad","condition":"sellado","storage_requirement":"ambiente"}]'::jsonb,
     null, '70000000-0000-0000-0000-000000000002',
     '{"reporting_ally":"aliado_inventado","specific_destination":false}'::jsonb,
-    public.current_donation_catalog_versions(), null
+    public.current_donation_catalog_versions(), null, null
   )$$,
   '22023',
   'Selecciona un aliado de referencia vigente',
@@ -253,7 +254,7 @@ select throws_ok(
     '[{"category":"Logística","category_code":"combustible","description":"Artículo sintético","quantity":1,"unit":"unidad","condition":"sellado","storage_requirement":"ambiente"}]'::jsonb,
     null, '70000000-0000-0000-0000-000000000002',
     '{"reporting_ally":"otro","observations":"","specific_destination":false}'::jsonb,
-    public.current_donation_catalog_versions(), null
+    public.current_donation_catalog_versions(), null, null
   )$$,
   '22023',
   'Especifica el otro aliado en Observaciones',
