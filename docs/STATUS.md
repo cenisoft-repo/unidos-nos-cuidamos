@@ -325,7 +325,7 @@ workflow de despliegue encadena ambos pasos en un solo trabajo.
 | Qué | Por qué no lo resuelve el despliegue |
 |---|---|
 | Habilitar registro y confirmación de correo en el panel de Auth | `db push` no toca la configuración de Auth. Sin esto `/registro` acepta el formulario y la activación nunca llega. **No usar `supabase config push`**: `config.toml` declara `site_url` en localhost |
-| Conceder la autoridad global con `grant_super_admin` | No hay vía desde la aplicación (ADR-011) y la escritura directa está bloqueada por disparador. Hasta entonces `/operaciones/parametrizacion` no es alcanzable para nadie |
+| ~~Conceder la autoridad global~~ **hecho el 2026-08-19** | Concedida a `gestorti2@cenisoft.org` con `grant_super_admin` desde el editor SQL, sobre una cuenta creada para ello. No se usó ninguna de las cinco cuentas sintéticas: la contraseña de esas vive en `supabase/seed.sql`, y el permiso más alto del sistema no puede depender de una clave versionada |
 | Rotar la contraseña de la base | Quedó expuesta durante la operación |
 | Repetir el arnés de simulación remota | Cierra `G-022` globalmente |
 
