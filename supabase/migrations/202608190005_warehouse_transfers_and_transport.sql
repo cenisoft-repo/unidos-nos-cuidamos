@@ -576,8 +576,8 @@ declare
   destination public.inventory_locations;
   request public.transfer_requests;
   target public.allocations;
-  event_id uuid;
-  organization_id uuid;
+  shipment_event uuid;
+  shipment_organization uuid;
   destination_label text;
   transport jsonb := coalesce(p_transport, '{}'::jsonb);
   allocation_count integer;
@@ -616,8 +616,8 @@ begin
     if destination.id is null or destination.id <> request.destination_location_id then
       raise exception using errcode = '22023', message = 'El destino no coincide con el autorizado en la solicitud';
     end if;
-    event_id := request.event_id;
-    organization_id := request.organization_id;
+    shipment_event := request.event_id;
+    shipment_organization := request.organization_id;
     destination_label := destination.public_location_text;
   else
     select * into target from public.allocations where id = p_allocation_id for update;
@@ -636,16 +636,16 @@ begin
     if public.contains_sensitive_content(p_public_destination) then
       raise exception using errcode = '22023', message = 'El destino público no puede incluir teléfonos, cuentas ni enlaces';
     end if;
-    event_id := target.event_id;
-    organization_id := target.organization_id;
+    shipment_event := target.event_id;
+    shipment_organization := target.organization_id;
     destination_label := btrim(p_public_destination);
   end if;
 
-  if origin.organization_id <> organization_id or origin.event_id <> event_id then
+  if origin.organization_id <> shipment_organization or origin.event_id <> shipment_event then
     raise exception using errcode = '42501', message = 'El punto de origen pertenece a otra organización o evento';
   end if;
   if not public.has_any_role(
-    organization_id, event_id,
+    shipment_organization, shipment_event,
     array['logistics_operator','warehouse_operator','event_admin']::public.app_role[]
   ) then
     raise exception using errcode = '42501', message = 'No puedes crear este despacho';
@@ -664,7 +664,7 @@ begin
     transport_contact_phone, transport_vehicle, transport_plate, transport_responsible,
     created_by, idempotency_key
   ) values (
-    event_id, organization_id, 'preparing', destination_label, origin.id,
+    shipment_event, shipment_organization, 'preparing', destination_label, origin.id,
     destination.id, request.id,
     nullif(btrim(transport ->> 'mode'), ''),
     nullif(btrim(transport ->> 'company'), ''),

@@ -131,7 +131,9 @@ language sql stable security invoker set search_path = '' as $$
   where shipment.event_id = p_event_id
     and shipment.status = 'preparing'
   group by shipment.id, origin.name, destination.name
-  order by since desc nulls last;
+  -- Tras un UNION ALL el orden se declara por posición: los nombres de salida los pone la
+  -- primera rama, no la firma de la función.
+  order by 9 desc nulls last;
 $$;
 
 -- Donaciones por aliado: lo prometido, lo recibido y lo que ya se entregó.

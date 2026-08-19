@@ -38,7 +38,7 @@ const { data: publicLogistics, error: logisticsError } = await anonymous.rpc("pu
 assert.equal(logisticsError, null, "Anon debe consultar la proyección logística pública");
 assert.equal(publicLogistics.filter((row) => row.source_type === "collection_center").length, 2, "La logística pública contiene los dos centros activos");
 assert.equal("exact_address_private" in publicLogistics[0], false, "La logística pública no expone direcciones exactas");
-assert.equal("carrier_name" in publicLogistics[0], false, "La logística pública no expone transportadores");
+assert.equal("transport_plate" in publicLogistics[0], false, "La logística pública no expone transportadores ni placas");
 
 const { error: logisticsWriteError } = await anonymous.from("public_logistics_projections").insert({
   event_id: "10000000-0000-0000-0000-000000000001",
