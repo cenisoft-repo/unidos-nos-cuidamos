@@ -29,16 +29,41 @@ const { data: publicCenters, error: centerError } = await anonymous.rpc("public_
   p_event_id: "10000000-0000-0000-0000-000000000001",
 });
 assert.equal(centerError, null, "Anon debe consultar centros públicos seguros");
-assert.equal(publicCenters.length, 2, "Anon solo ve los dos centros sintéticos proyectados");
-assert.equal("exact_address_private" in publicCenters[0], false, "La proyección de centros no expone direcciones exactas");
+/*
+ * Antes esto fijaba el número de centros en 2 y se rompió cuando `202608170001`
+ * promovió 21 aliados a puntos de acopio. Un conteo atado al seed no prueba
+ * nada de privacidad y se cae con cada cambio de datos, así que se comprueban
+ * las propiedades que sí importan y en TODAS las filas, no solo en la primera.
+ *
+ * `202608170002` decidió que la dirección de un acopio es pública —es un lugar
+ * de entrega—, de modo que aquí se verifica que no se filtren las columnas
+ * operacionales, no que la dirección esté oculta.
+ */
+assert.ok(publicCenters.length > 0, "La proyección pública de centros devuelve resultados");
+const columnasOperacionales = ["exact_address_private", "organization_id", "event_id", "active", "created_at", "updated_at"];
+for (const centro of publicCenters) {
+  for (const columna of columnasOperacionales) {
+    assert.equal(columna in centro, false, `La proyección de centros no expone ${columna}`);
+  }
+  assert.ok(centro.location_label?.length > 0, "Cada centro público declara dónde queda");
+}
+// La prueba real de RLS: la tabla operacional sigue cerrada a anónimo.
+const { data: rawLocations } = await anonymous.from("inventory_locations").select("id").limit(1);
+assert.equal(rawLocations?.length ?? 0, 0, "Anon no puede leer la tabla operacional de puntos");
 
 const { data: publicLogistics, error: logisticsError } = await anonymous.rpc("public_logistics_map", {
   p_event_id: "10000000-0000-0000-0000-000000000001",
 });
 assert.equal(logisticsError, null, "Anon debe consultar la proyección logística pública");
-assert.equal(publicLogistics.filter((row) => row.source_type === "collection_center").length, 2, "La logística pública contiene los dos centros activos");
-assert.equal("exact_address_private" in publicLogistics[0], false, "La logística pública no expone direcciones exactas");
-assert.equal("carrier_name" in publicLogistics[0], false, "La logística pública no expone transportadores");
+assert.ok(
+  publicLogistics.filter((row) => row.source_type === "collection_center").length > 0,
+  "La logística pública contiene los centros activos",
+);
+// El transportador es privado por decisión de producto: se comprueba fila por fila.
+for (const fila of publicLogistics) {
+  assert.equal("exact_address_private" in fila, false, "La logística pública no expone direcciones operacionales");
+  assert.equal("carrier_name" in fila, false, "La logística pública no expone transportadores");
+}
 
 const { error: logisticsWriteError } = await anonymous.from("public_logistics_projections").insert({
   event_id: "10000000-0000-0000-0000-000000000001",

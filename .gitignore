@@ -1,5 +1,7 @@
 node_modules/
 .next/
+# Directorios de compilacion aislados (suite E2E, auditorias)
+.next-*/
 .vercel/
 .codex-runtime/
 .local-backups/

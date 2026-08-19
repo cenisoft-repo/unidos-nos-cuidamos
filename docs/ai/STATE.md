@@ -1,14 +1,100 @@
 # Estado actual
 
-- Puerta/hito: G1 publicada como sandbox sintético interno; G2/G3 bloqueadas y no deben incorporarse operadores/PII antes de cerrar `G-021` y verificar el cierre local de `G-022` en remoto.
-- Último resultado comprobado: local con 17 migraciones, 152/152 SQL, RLS/concurrencia, 33/33 unitarias, 28/28 Playwright, lint, typecheck y build; remoto conserva 15 migraciones y la simulación `SIM-20260816195948-9f2d8d2b` con 38/38 controles funcionales, 46 eventos auditados y ocho hallazgos.
+- Puerta/hito: G1 publicada como sandbox sintético interno; G2/G3 bloqueadas y no deben incorporarse operadores/PII antes de verificar en remoto el cierre local de `G-022`.
+- Último resultado comprobado: **`npm run verify` verde de extremo a extremo** con 28 migraciones — preflight, lint, typecheck, 39/39 unitarias, 218/218 pgTAP, RLS, concurrencia, build y 30/30 Playwright web/móvil.
+- **Remoto al día: 28 migraciones, sincronizado con local (despliegue 2026-08-17).** Esta línea decía «el remoto conserva 15 migraciones» y era falsa: el remoto ya tenía 26 antes de este despliegue. Ese dato desactualizado hizo creer que `G-030` no había llegado a producción, cuando sí estaba viva allí. Comprobar contra `supabase migration list --linked`, no contra esta memoria.
 - Recorrido activo local/remoto: portal, reportes, aportes en especie/dinero con catálogos versionados y centro compatible, QR de seguimiento, operación, tesorería, mapas, dashboards y exportaciones con datos sintéticos. El registro de aporte usa un recorrido adaptativo de cuatro pasos en especie y tres en dinero.
-- Hallazgos: A15-001 a A15-008 cerrados para G1. `G-022` está cerrado localmente con selección y validación exclusiva por organización; `G-021` P0 sigue abierto. Continúan `G-023/G-025` P1, `G-024` P1 y `G-026/G-027` P2. G-015 conserva la capa WAF remota; G-018 a G-020 están cerradas localmente.
-- Próxima acción exacta: corregir el alcance RLS de datos privados (`G-021`); después aplicar con autorización `202608160002/003` y repetir el arnés remoto para cerrar globalmente `G-022`. Rotar también las credenciales expuestas.
+- Hallazgos: A15-001 a A15-008 cerrados para G1. Cerradas también `G-021`, `G-023`, `G-024`, `G-025` (`202608170003/004/005`), `G-028`, `G-029`, `G-032`, `G-033` y `G-030` (esta última **globalmente**, verificada en producción). `G-022` tiene su migración aplicada en remoto; solo falta repetir allí el arnés de simulación. En la pista visual: `DQ-01`, `DQ-04` y `DQ-05` cerradas; `DQ-06` mitigada. **Abiertas:** `G-031` P2 (tensión de tenant), `G-026/G-027` P2, `G-015` P2 (WAF remoto), `G-017` P2 y `G-001` a `G-008` P2 (decisiones humanas). `docs/GAP_LEDGER.md` y `docs/ai/DESIGN_QUALITY.md` son la fuente.
+- Próxima acción exacta: `DQ-06` —acotar la lista de puntos en móvil con buscador o ficha replegable; la métrica de cierre es la razón móvil/escritorio, hoy 14,9 contra 1,8 pantallas, no un alto absoluto (crece con los datos)—. Después `S-01 Evidencias`, única superficie en nivel 0 pero condicionada a `G-003`/`G-005`. En paralelo y con decisión humana: `G-031` (¿cada gremio habilita representante, o se admite entregar en punto de otra organización validando en recepción?), repetir el arnés remoto para cerrar `G-022` y rotar las credenciales expuestas.
 - Bloqueos reales: operador, autoridad, DPIA, política de aceptación, proveedor real, WAF/monitoreo externo, backups remotos/PITR, HIBP, marcas y aprobación de piloto. El despliegue actual no autoriza datos reales, recaudo ni comunicación institucional.
-- Entorno local: `preflight:local` está bloqueado por enlaces previos presentes en `.vercel/project.json` y `supabase/.temp/project-ref`; no fueron eliminados automáticamente. La funcionalidad y la base local sí están verdes.
+- Entorno local: `preflight:local` pasa. Los enlaces remotos se regeneraron para el despliegue del 2026-08-17 y **se retiraron al terminar** —mientras están puestos, `preflight:local` falla y bloquea `npm run verify`, que es su propósito—; respaldados en `.local-backups/enlaces-remotos/`, se regeneran con `vercel link` y `supabase link`. El `.env.local` sigue apuntando al entorno de **entrega**; para correr la suite hay que conmutar a suite según `docs/REMOTE_SETUP_RUNBOOK.md`.
+- Deuda documental conocida: `202608170007` lleva en su encabezado la frase «El remoto conserva 15 migraciones», falsa y ya aplicada en producción. No se edita: una migración aplicada es historia y este proyecto compensa en vez de reescribir. La corrección vive aquí, en `GAP_LEDGER.md` y en `STATUS.md`.
 
 ## Delta último ciclo
+
+### Pista visual 2026-08-17 · DQ-01 cerrado, el instrumento ya sirve de puerta
+
+- `audit:a11y` y `audit:visual` recorren **11 superficies** (6 públicas + 5
+  consolas, cada una con el rol que la usa; `/operaciones` dos veces porque
+  coordinación y aliado ven pantallas distintas). Rutas y sesión en
+  `scripts/lib/rutas-auditadas.mjs`; solo contra loopback.
+- **`audit:a11y` sale en 0 por primera vez.** Antes contaba como fallo el texto
+  sobre fotografía o degradado —que no es calculable desde el DOM— y por eso
+  nunca podía estar verde: un control que siempre falla no sirve de puerta. Ahora
+  eso sale como `contrasteIndeterminado`, aparte y sin contar. Los 3 del pie de
+  la portada se midieron a mano componiendo foto y velo: 5,54 · 5,99 · 6,10.
+- **DQ-04, hallazgo real que solo apareció con sesión.** `--muted` daba 4,89:1
+  sobre `--paper` pero 4,37 sobre `--mint`, el fondo de *todo* estado
+  seleccionado; el fallo era latente en diez fondos claros y se vio en el lote
+  elegido de bodega. Token a `#57645f` (5,58 / 4,99).
+- **DQ-05.** En el selector de lote la cantidad —el dato por el que se elige—
+  iba a 10 px en el color más tenue. Pasa a tinta plena.
+- **DQ-06, mitigado y abierto.** `/operaciones/centros`: **14,9 pantallas en
+  móvil contra 1,8 en escritorio** con los mismos 28 puntos. El scroll interno
+  que acota la lista solo existe desde 761 px, así que en móvil el alto crece con
+  los datos. La ficha pasó de 364 a 280 px al volver a dos columnas, pero eso no
+  cambia la proporcionalidad: hace falta buscador o repliegue, y es producto.
+- `audit:visual`: 55 mediciones, cero desbordes horizontales de 1440 a 390 px.
+- **G-033 · P2 cerrada, y es la lección del ciclo.** La suite E2E corría en el
+  puerto 3000 con `reuseExistingServer` activo: `verify` probaba en silencio el
+  servidor de desarrollo que hubiera abierto. La prueba del mapa falló contra mi
+  propio servidor con horas de uso y el HMR caído —dos chunks en 403— y con
+  servidor limpio pasa en 10 s. **Casi lo atribuyo a mis cambios de CSS; no lo
+  eran.** Ahora: puerto 3100 y sin reutilizar salvo petición expresa.
+- Niveles: S-02/S-03/S-04 suben a 3 porque ya existe la medición que faltaba;
+  S-05 se queda en 2 pese a tener el contraste limpio, por DQ-06.
+
+### Despliegue 2026-08-17 · G-028 y G-030 en producción
+
+- `supabase db push --linked` aplicó `202608170006` y `202608170007`; `vercel --prod`
+  desplegó y quedó aliado a `unidos-nos-cuidamos.vercel.app`, listo en 28 s.
+- **`G-030` cerrada globalmente.** Antes del push, producción tenía **21
+  membresías `partner_reporter` cruzadas activas** sobre organizaciones de
+  gremios: una sola cuenta podía reportar y corregir a nombre de ANDI, Cruz Roja
+  o la Cámara de Comercio. Tras el push: **0**.
+- Verificado en producción: `cruzadas_activas=0`, `partner_activas_total=1`,
+  `amend_donation_intake` existe, `intake_amendments` existe con RLS activa.
+- Smoke test: `/api/health` `ok` con base conectada; `/`, `/reportar`, `/donar`,
+  `/seguimiento`, `/transparencia`, `/ingresar` en 200; CSP, HSTS, `nosniff` y
+  `X-Frame-Options: DENY` presentes; el aviso «Datos de práctica» sigue visible y
+  `/ingresar` no publica credenciales.
+- Respaldo previo de las 22 membresías en
+  `.local-backups/despliegue-20260817/membresias-antes.json`.
+- **La puerta no se movió:** sigue G1 sandbox sintético. Este despliegue cierra un
+  P1 vivo y agrega el ciclo de corrección; no autoriza datos reales, recaudo ni
+  comunicación institucional.
+
+- **`npm run verify` verde de extremo a extremo**, y `G-030` cerrada: `202608170001` replicaba `partner_reporter` sobre las 21 organizaciones aliadas, habilitando a una sola cuenta para reportar como ANDI, Cruz Roja o la Cámara de Comercio. `202608170007` deja de replicarlo y desactiva lo concedido sin borrarlo. Se creyó que no había llegado al remoto; **sí estaba viva allí** y se desplegó el mismo día (bloque anterior).
+- Lo detectó `verify-rls.mjs`, que esperaba una organización y veía 22. **La
+  comprobación estaba en lo correcto y por eso no se relajó**; se relajaron solo
+  las que sí eran expectativas viejas (G-029).
+- **G-029 · P2 cerrada.** Conteo fijo de centros, etiqueta «Dirección exacta
+  privada» —`202608170002` hizo pública la dirección de un acopio, por ser lugar
+  de entrega— y una verificación de privacidad que solo miraba la fila `[0]`.
+  Ahora comprueba todas las filas y que anon no lea la tabla operacional.
+- **G-032 · P2 cerrada.** `verify` no era idempotente: `db:test` corría antes del
+  único `db:reset` y heredaba los puntos del E2E previo. Reset antepuesto.
+- **G-031 · P2 abierta.** Sin representante propio, los 21 puntos de gremios son
+  públicos pero ningún aliado puede enrutar un aporte a ellos, porque G-022 exige
+  mismo tenant. Es una tensión de modelo que necesita decisión humana.
+- Entorno: `preflight:local` estaba bloqueado por `.vercel/project.json` y
+  `supabase/.temp/project-ref`. Se respaldaron en `.local-backups/enlaces-remotos/`
+  y se retiraron; se regeneran con `vercel link` y `supabase link` al desplegar.
+
+- **Pista funcional · G-028.** Migración `202608170006`: tabla `intake_amendments`
+  append-only con RLS de lectura para la organización dueña, verificación y
+  auditoría, y sin política de escritura —la única escritura ocurre dentro de la
+  RPC `security definer`. `donation_intake_items` no tiene trigger de auditoría,
+  así que la fila de enmienda guarda el diff explícito en vez de delegarlo.
+- `amend_donation_intake` exige `partner_reporter` de la organización dueña
+  (`has_any_role` acota organización y evento a la vez), estado `observed` y
+  versión esperada; la respuesta pasa por `contains_sensitive_content`. Una
+  versión distinta a la leída se rechaza con `40001` en vez de pisar el cambio.
+- Superficie en `/operaciones`: los aportes observados del aliado aparecen antes
+  que cualquier otra cola suya, con la observación de verificación citada.
+- Evidencia: 22 pgTAP nuevas y el E2E del ciclo completo observar → corregir →
+  volver a verificación en chromium y móvil. La prueba crea su propio aporte
+  porque el seed no trae ninguno.
 
 - Alcance por evento en las consolas operativas: `/operaciones`, `/operaciones/bodega` y `/operaciones/tesoreria` filtraban roles y datos sin `event_id`. Un rol vigente en otro evento abría la consola y las listas mezclaban filas de todos los eventos donde la organización tuviera membresía. Ahora todas las consultas se acotan a `EVENT_ID`, incluidas `donation_items`, `need_items` y `deliveries`, que se acotan por su padre con join interno.
 - Saldo conciliado correcto: se sumaba en el cliente sobre la lista ya cargada — ocho transacciones en el centro operativo y el tope de la API en tesorería — y se mostraba como «Saldo conciliado» sin decir que era parcial. `treasury_balance` lo calcula sobre el libro completo del evento y solo de las organizaciones donde la persona es miembro. El KPI declara cuántos movimientos suma y solo aparece para roles de tesorería.
@@ -17,61 +103,7 @@
 - La comprobación de origen inválido del recorrido se anuncia como omitida cuando la organización no declara ningún punto de solo recepción, para no leerse como cobertura que no existe.
 - Verificado: lint, `tsc --noEmit`, build, 39/39 unitarias, 182/182 pgTAP, RLS, concurrencia, 28/28 Playwright y el ciclo desde cero con 41/41 del recorrido.
 
-- Entorno local conmutado a **entrega**: base vaciada con `db reset --no-seed` y provisionada con `bootstrap:environment` sobre `entorno-entrega.json` (fuera del repositorio). Evento `entrega-piloto-2026`, dos organizaciones, cinco cuentas con contraseña generada, tres puntos (dos de acopio y uno solo de despacho) y un fondo.
-- `NEXT_PUBLIC_APP_ENV=production` en `.env.local`: el aviso «Datos de práctica» desapareció de cabecera, pie, `/ingresar`, `/donar`, `/reportar`, `/transparencia`, `/operaciones`, `/operaciones/centros` y de los metadatos de los libros Excel. Comprobado: cero apariciones de «práctica» en las cinco superficies públicas.
-- Limpieza comprobada: la contraseña publicada del seed ya no autentica (400) y no quedan proyecciones públicas de necesidades ni de donaciones heredadas de la demostración.
-- Consecuencia asumida: con el entorno de entrega, pgTAP y Playwright fallan porque comprueban el seed sintético. 39/39 unitarias siguen verdes. `npm run env:suite` y `npm run env:entrega` alternan entre ambos; el runbook explica el par de variables que hay que mover.
-- **No** se tocó el despliegue público: `unidos-nos-cuidamos.vercel.app` conserva `sandbox` y su aviso. Quitarlo allí es un cambio hacia afuera y sigue atado a `G-003` a `G-006`.
-
-- Puntos con propósito declarado: cada punto dice si es centro de acopio, de despacho o ambos (`accepts_donations`, `dispatches_shipments`, con restricción que impide dejarlo sin propósito). Un punto que solo despacha deja de aparecer en el mapa público, en `public_collection_centers`, en la proyección logística y en el paso «Punto de entrega» del aliado. `/operaciones/centros` administra el propósito y oculta las categorías cuando el punto no recibe.
-- Despacho con origen: `shipments.origin_location_id` fija desde dónde salió la carga. `create_shipment` valida tenant, punto activo y propósito de despacho, exige una zona de destino de 3 a 180 caracteres y la pasa por `contains_sensitive_content`. La consola de bodega dejó de enviar «Por asignar» y ahora pide origen, destino y transportador.
-- Trazabilidad: `track_public_journey` devuelve la cadena real de hitos con fecha para NEC, APO y DON. Cierra el hallazgo de que el `APO-*` no heredaba el estado `DON-*`: el donante ve recepción, reserva, despacho, entrega y validación, con ambos códigos. El orden es por etapa del proceso y no por fecha, para que un registro con fecha atrasada no desordene la lectura. `/seguimiento` pasó de cuatro etapas fijas a la cronología comprobada más el siguiente control.
-- Privacidad de la cadena: solo salen etiquetas fijas, cantidades conciliadas y la zona pública del despacho. Transportador, dirección exacta, contacto y notas de decisión no aparecen; hay comprobación automática de ello.
-- Seed corregido: el código de la donación de demostración no cumplía el formato `DON-` + 24 hexadecimales, así que nunca resolvía en `/seguimiento`; y las necesidades se publicaban sin dejar `need_verifications`, lo que dejaba la cadena hueca. Ambos casos ya reflejan el recorrido real.
-- Verificación: `verify:environment-flow` pasó de 17 a 42 comprobaciones. Suma sobreasignación, origen inválido, destino con contenido sensible, entrega que no concilia, idempotencia de despacho y conciliación, no publicación de la referencia privada del soporte y los ocho hitos de la cadena.
-- Verificado tras el cambio: lint, `tsc --noEmit`, build, 39/39 unitarias, 174/174 pgTAP, RLS, concurrencia, 28/28 Playwright y el ciclo `db reset --no-seed` → bootstrap → 42/42 del recorrido.
-
-- Provisión desde cero: `npm run bootstrap:environment` monta evento, organizaciones, cuentas por rol, centros de acopio y fondos sobre un proyecto vacío, a partir de un JSON declarativo (`supabase/bootstrap.config.example.json`). No está atado a ningún proyecto: exige `BOOTSTRAP_CONFIRM_TARGET` igual al host de destino y `BOOTSTRAP_ACKNOWLEDGE_REAL_EVENT=yes` si el evento no es simulado en remoto.
-- Los centros de acopio se crean llamando a `manage_delivery_point` con sesión `event_admin`, no escribiendo tablas: nacen versionados y auditados igual que desde `/operaciones/centros`. La reejecución compara contra `delivery_points_admin` y no reescribe lo que ya coincide.
-- `npm run verify:environment-flow` recorre el flujo completo sobre el entorno provisionado usando solo las funciones de la aplicación y sin la clave secreta: reporte → verificación/publicación → aporte en especie → aprobación → recepción idempotente → asignación → despacho → entrega → validación independiente → aporte económico → conciliación → solicitud/aprobación de gasto → seguimiento público. 17/17 comprobado sobre una base vaciada a cero.
-- El evento dejó de estar fijado en código: `EVENT_ID`/`EVENT_SLUG` salen de `NEXT_PUBLIC_EVENT_ID`/`NEXT_PUBLIC_EVENT_SLUG` con validación de formato, y caen al evento local sintético si no se declaran. `DEMO_OPERATOR_ORG_ID` y `DEMO_PARTNER_ORG_ID` eran código muerto y se eliminaron.
-- Migración `202608160004`: `service_role` recibe privilegios mínimos y explícitos sobre `organizations`, `emergency_events`, `profiles`, `memberships` y `funds` — el arranque en frío que ninguna sesión con rol puede crear. Sigue sin alcanzar aportes, inventario, movimientos financieros, centros ni auditoría. Antes esto dependía de los privilegios por defecto de la plataforma: el mismo procedimiento funcionaba en remoto y fallaba en local.
-- Verificado tras el cambio: lint, `tsc --noEmit`, build, 39/39 unitarias, 163/163 pgTAP, RLS, concurrencia y 28/28 Playwright web/móvil, más el ciclo completo `db reset --no-seed` → bootstrap → flujo sobre un evento y unas organizaciones distintos a los del seed.
-
-- Registro de aporte optimizado: el recorrido pasó de cinco pasos fijos a cuatro en especie y tres en dinero (el aporte económico ya no atraviesa el paso de punto de entrega). «Qué donarás» y «Cantidad» quedaron fusionados y el editor del artículo aparece al elegir la categoría, sin selector de categoría duplicado mientras haya un solo artículo.
-- Campos por paso reducidos de ~24 visibles a 9 obligatorios: estado/cuidado/valor estimado, destinación específica con alcance y los siete datos internos del donante viven en bloques plegables con `aria-expanded`, que se abren solos si ya traen valores. El payload de `submit_donation_intake_v2` no cambió.
-- Microcopy: encabezados en pregunta directa («¿Qué vas a aportar?», «¿Dónde lo entregas?», «¿Con quién coordinamos?»), «Estado declarado» pasó a «Situación actual del aporte» y los avisos de validación se muestran junto al botón que los provoca para no quedar fuera de pantalla en móvil.
-- Verificado tras el cambio: lint, `tsc --noEmit`, 33/33 unitarias y 28/28 Playwright web/móvil.
-
-- Simulación remota: reporte ciudadano → verificación/publicación → aporte/QR → aprobación → recepción/lote → asignación/despacho/entrega/validación y aporte económico → conciliación → solicitud/aprobación/pago; 38/38 comprobaciones finales.
-- Controles confirmados: idempotencia en seis mutaciones, separación aliado/verificador, bodega/verificador y solicitante/aprobador, proyecciones públicas sin los marcadores de contacto, salud y Excel públicos.
-- Brechas bloqueantes: `partner_reporter` alcanza datos privados de necesidades. El cruce organización-punto ya está bloqueado localmente, pero falta desplegarlo y probarlo en remoto.
-- Seguimiento/territorio: el QR `APO-*` ya hereda el recorrido operacional del `DON-*` mediante `track_public_journey`; el despacho sigue sin entrar al mapa cuando no hay coordenadas aproximadas moderadas.
-- Auditoría/analítica: historial crítico presente pero parte queda sin contexto completo de tenant, no comparte correlación transaccional y no genera un nuevo corte de métricas.
-- Evidencia: `docs/REMOTE_FLOW_SIMULATION_2026-08-16.md`; JSON y captura QR permanecen fuera del repositorio bajo `%LOCALAPPDATA%\RutaSolidaria\simulaciones`.
-
-- Catálogos locales: tipos de donante, sectores, categorías, estados, cobertura, departamentos, unidades y 22 aliados de referencia salen de PostgreSQL con versión fijada por intake; el aliado seleccionado no sustituye la organización derivada de membresía.
-- Fotografías del intake: cero a tres JPG/PNG privadas de 5 MB, hash SHA-256, ruta generada por servidor, vínculo auditado y confirmación de existencia en Storage; continúan `pending` y no acreditan recepción o entrega.
-- Claridad de solicitudes: la revisión define que es una petición de verificación (no ayuda/recibo/entrega) y la cola operativa presenta tipo, resumen, cantidad, centro, aliado, fotos, fecha y siguiente control en lenguaje natural.
-- Centros: reglas con alcance opcional por `location_id`, proyección de reglas vigentes y doble validación UI/RPC de aceptación y cadena de frío.
-- Puntos parametrizados: `/operaciones/centros` administra organización, zona pública, dirección privada, instrucción, coordenadas, frío, estado y categorías; RPC idempotente con reglas versionadas y auditoría append-only. Aliados solo consultan puntos activos de su organización y el intake rechaza cruces de tenant.
-- Seguridad: aliado derivado de membresía activa y organización verificada; la firma antigua de intake quedó revocada para `authenticated`.
-- Semántica: “Entregada” es solo estado declarado; el flujo conserva `pending_verification` y no crea donación operativa sin aprobación.
-- Evidencia verde del ciclo: 152 SQL, RLS, concurrencia, 33 unitarias, 28 Playwright web/móvil, lint, TypeScript y build.
-- Acceso remoto: el login ya no enumera cuentas; cinco identidades sintéticas y 12 membresías fueron provisionadas y autenticadas, con credenciales temporales fuera del repositorio y ACL exclusiva del usuario local.
-- Publicación remota: migración `202608160001` aplicada; dos centros y reglas sintéticas activos; Vercel `dpl_6isVPmpj83EKqKFX6DPRpjUpLVqM` en `READY`; salud, formulario de reportes, centros, CSP y ocultamiento del bloque verificados sobre el alias público.
-
-- Seguridad: migración `20260815224447_harden_local_operations.sql` agrega cuota atómica 5/10 min sin IP en claro; Auth bloquea altas libres, endurece contraseñas y acota sesiones.
-- Observabilidad: logs JSON sin PII, hook de error, request ID, Server-Timing y salud no cacheable; cabeceras HTTP reforzadas, HSTS solo en producción.
-- Recuperación: backup público sintético con manifiesto SHA-256; restore real desde migraciones + datos, 94 pgTAP y RTO 57,1 s.
-- Operación: `npm run preflight:local` impide enlaces remotos accidentales; `npm run preflight:deploy` solo informa bloqueos y no muta servicios.
-- Offline/UX: cola estricta sin PII, TTL/capacidad, búsqueda de recepción, etapas y compatibilidad de lote/necesidad.
-- Entrega G2: CI y runbooks de incidente, datos, WAF y aprobación quedan listos para revisión humana.
-- Evidencia previa: 94 SQL, RLS, concurrencia, 13 unitarias, 24 web/móvil y build antes de la integración catalogada.
-- Remoto: Supabase `vcgwfyhytzgyzicfbikf` conserva las 15 migraciones y datos exclusivamente sintéticos; RLS sigue denegando tablas operacionales a `anon`; Auth tiene altas globales cerradas y contraseña mínima de 12 caracteres con complejidad y reautenticación.
-- Publicación: `https://unidos-nos-cuidamos.vercel.app` apunta al despliegue sano; `/api/health` confirma `database: connected`, CSP/HSTS están presentes y el smoke test no produjo respuestas 500.
-- Pendiente remoto: rotar la contraseña de base expuesta, HIBP, WAF/monitoreo y backups/PITR; no autorizar datos, dinero ni actores reales antes de G2.
-- Resultado: detalle en `docs/FUNCTIONAL_AUDIT_2026-08-15.md` y `docs/OPERATIONAL_READINESS.md`.
+- Ciclos anteriores (entorno de entrega, puntos con propósito, provisión desde cero, recorrido optimizado, simulación remota, catálogos, endurecimiento inicial): `docs/ai/archive/STATE-hasta-2026-08-16.md`. Sus cifras son históricas.
 
 ## Contexto que debe cargarse
 

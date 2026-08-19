@@ -10,6 +10,7 @@ import { servesNonProductionData } from "@/lib/environment";
 import { toDonationFlowCatalogs, type DonationCatalogRow } from "@/lib/donation-catalogs";
 import { StatusPill } from "@/components/status-pill";
 import { IntakeActions, NeedActions } from "@/components/operational-actions";
+import { IntakeAmendmentForm } from "@/components/intake-amendment-form";
 import { logout } from "@/app/ingresar/actions";
 
 export const metadata: Metadata = { title: "Centro operativo" };
@@ -18,6 +19,17 @@ export const dynamic = "force-dynamic";
 type Membership = { role: string; organization_id: string; organizations: { name: string } | null };
 type Need = { id: string; tracking_code: string; category: string; description: string; public_location_text: string; status: string; created_at: string; expires_at: string; priority_score: number | null; need_items: { quantity_required: number; unit: string }[] };
 type IntakeItem = { category: string; description: string; quantity: number; unit: string };
+/** Aporte devuelto al aliado con observaciones, con su última decisión. */
+type ObservedIntake = {
+  id: string;
+  tracking_code: string;
+  kind: string;
+  version: number;
+  declared_amount: number | null;
+  submitted_at: string;
+  donation_intake_items: { id: string; description: string; quantity: number; unit: string }[];
+  intake_verification_decisions: { decision: string; note: string; decided_at: string }[];
+};
 type Intake = {
   id: string;
   tracking_code: string;
@@ -69,6 +81,8 @@ export default async function OperationsPage() {
   const roles = new Set(memberships.map((item) => item.role));
   const canVerify = roles.has("verifier") || roles.has("event_admin");
   const canSeeTreasury = ["treasury_requester", "treasury_approver", "event_admin", "auditor"].some((role) => roles.has(role));
+  // El aliado responde observaciones sobre sus propios aportes; no verifica.
+  const isPartner = roles.has("partner_reporter");
 
   // Toda consulta se acota al evento que sirve la instancia. Sin ese filtro, una persona
   // con membresía en otro evento vería aquí su cola y sus cifras mezcladas con las de este.
@@ -84,6 +98,26 @@ export default async function OperationsPage() {
     canSeeTreasury ? supabase.rpc("treasury_balance", { p_event_id: EVENT_ID }) : Promise.resolve({ data: [], error: null }),
   ]);
   assertSupabaseSuccess("centro_operativo", [needsResult, intakesResult, lotsResult, txResult, expensesResult, auditsResult, catalogsResult, balanceResult]);
+
+  /*
+   * Aportes observados de este aliado (G-028). Antes esta cola no existía: el
+   * verificador dejaba una observación y el aliado no tenía dónde responderla.
+   * RLS ya acota a las organizaciones donde la persona es miembro; el filtro por
+   * evento y estado solo recorta lo que hay que resolver hoy.
+   */
+  const observedResult = isPartner
+    ? await supabase
+        .from("donation_intakes")
+        .select(
+          "id,tracking_code,kind,version,declared_amount,submitted_at,donation_intake_items(id,description,quantity,unit),intake_verification_decisions(decision,note,decided_at)",
+        )
+        .eq("event_id", EVENT_ID)
+        .eq("status", "observed")
+        .order("submitted_at", { ascending: true })
+        .limit(10)
+    : { data: [], error: null };
+  assertSupabaseSuccess("aportes_observados", [observedResult]);
+  const observedIntakes = (observedResult.data ?? []) as unknown as ObservedIntake[];
 
   const needs = (needsResult.data ?? []) as Need[];
   const intakes = (intakesResult.data ?? []) as unknown as Intake[];
@@ -105,6 +139,30 @@ export default async function OperationsPage() {
       <Link href="/seguimiento"><span><Search size={21} /></span><div><strong>Consultar un código</strong><small>Ver el recorrido público y seguro</small></div><ArrowRight size={16} /></Link>
     </div></section>
     <section className="ops-kpis" aria-label="Indicadores operativos"><div className="ops-kpi"><span>Necesidades por revisar</span><strong>{needs.length}</strong><small>reportes ciudadanos sin publicar</small></div><div className="ops-kpi"><span>Aportes por revisar</span><strong>{intakes.length}</strong><small>reportados por aliados autenticados</small></div><div className="ops-kpi"><span>Lotes visibles</span><strong>{lots.length}</strong><small>según tu organización</small></div>{canSeeTreasury && <div className="ops-kpi"><span>Saldo conciliado</span><strong>{currencyFormat.format(Number(treasury?.balance ?? 0))}</strong><small>{treasury?.movement_count ?? 0} movimientos del libro completo</small></div>}</section>
+    {/*
+      G-028 · Los aportes devueltos con observaciones son lo primero que un
+      aliado tiene que resolver: van antes que cualquier otra cola suya.
+    */}
+    {isPartner && observedIntakes.length > 0 && <section className="ops-panel" id="aportes-observados" aria-labelledby="observados-title"><header className="ops-panel-header"><div><h2 id="observados-title"><AlertTriangle size={18} style={{ display: "inline", marginRight: 7 }} /> Tus aportes con observaciones</h2><p>Verificación pidió una corrección. Al enviarla, el aporte vuelve a la cola y la versión anterior queda en el historial.</p></div><span>{observedIntakes.length} por responder</span></header><div className="ops-list">
+      {observedIntakes.map((intake) => {
+        // La última observación registrada es la que hay que responder.
+        const observation = intake.intake_verification_decisions
+          .filter((decision) => decision.decision === "observe")
+          .sort((a, b) => b.decided_at.localeCompare(a.decided_at))[0];
+        return <article className="ops-row ops-row-stack" key={intake.id}>
+          <div><h3>{intake.tracking_code} · versión {intake.version}</h3><p>{intake.kind === "money" ? `${currencyFormat.format(Number(intake.declared_amount ?? 0))} declarados` : `${intake.donation_intake_items.length} línea(s)`} · registrado {formatDate(intake.submitted_at)}</p></div>
+          <IntakeAmendmentForm
+            intakeId={intake.id}
+            version={intake.version}
+            kind={intake.kind}
+            declaredAmount={intake.declared_amount}
+            items={intake.donation_intake_items}
+            observation={observation?.note ?? null}
+          />
+        </article>;
+      })}
+    </div></section>}
+
     <div className="ops-grid"><section className="ops-panel" id="cola-verificacion"><header className="ops-panel-header"><div><h2><ClipboardCheck size={18} style={{ display: "inline", marginRight: 7 }} /> Solicitudes pendientes de decisión</h2><p>Lee qué se reportó, dónde aplica y cuál es el siguiente control. Aprobar no significa recibir ni entregar.</p></div><span>{needs.length + intakes.length} pendientes</span></header><div className="ops-list">
       {needs.map((need) => <article className="ops-row ops-request" key={need.id}><div><span className="ops-request-kind">Necesidad reportada por la ciudadanía</span><h3>{need.category} en {need.public_location_text}</h3><p className="ops-request-summary">{need.description.slice(0,180)}</p><dl className="ops-request-facts"><div><dt>Código</dt><dd>{need.tracking_code}</dd></div><div><dt>Solicitado</dt><dd>{need.need_items.length ? need.need_items.map((item) => `${numberFormat.format(Number(item.quantity_required))} ${item.unit}`).join(" · ") : "Cantidad no disponible"}</dd></div><div><dt>Reportado</dt><dd>{formatDate(need.created_at)}</dd></div></dl><p className="ops-request-next"><strong>Siguiente control:</strong> confirmar hechos, cantidad y ubicación antes de publicar.</p>{canVerify && <NeedActions id={need.id} status={need.status} />}</div><div className="ops-row-meta"><StatusPill status={need.status} /></div></article>)}
       {intakes.map((intake) => { const allyLabel = catalogs.reportingAllies.find((ally) => ally.value === intake.reporting_ally_code)?.label ?? "Sin aliado de referencia"; const uploadedPhotos = intake.donation_intake_evidence.filter((evidence) => evidence.uploaded_at).length; return <article className="ops-row ops-request" key={intake.id}><div><span className="ops-request-kind">{intake.kind === "in_kind" ? "Aporte en especie reportado" : "Aporte económico declarado"}</span><h3>{intakeDeclaredSummary(intake)}</h3><dl className="ops-request-facts"><div><dt>Código</dt><dd>{intake.tracking_code}</dd></div><div><dt>Situación declarada</dt><dd>{catalogs.declaredStatuses.find((status) => status.value === intake.declared_status)?.label ?? labelStatus(intake.declared_status)}</dd></div><div><dt>Centro previsto</dt><dd>{intakeCenterName(intake) ?? (intake.kind === "money" ? "No aplica" : "Sin centro")}</dd></div><div><dt>Aliado relacionado</dt><dd>{allyLabel}</dd></div><div><dt>Presentación pública</dt><dd>{attributionNames[intake.public_attribution_kind] ?? "No definida"}</dd></div><div><dt>Fotos privadas</dt><dd>{intake.donation_intake_evidence.length ? `${uploadedPhotos} cargada(s), pendientes de revisión` : "Sin fotos"}</dd></div><div><dt>Reportado</dt><dd>{formatDate(intake.submitted_at)}</dd></div></dl><p className="ops-request-next"><strong>Siguiente control:</strong> validar identidad, cantidades, centro y soportes antes de aprobar.</p>{canVerify && <IntakeActions id={intake.id} />}</div><div className="ops-row-meta"><StatusPill status={intake.status} /></div></article>; })}

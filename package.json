@@ -34,7 +34,7 @@
     "verify:environment-flow": "node scripts/verify-environment-flow.mjs",
     "provision:sandbox-access": "node scripts/provision-sandbox-access.mjs",
     "simulate:sandbox": "node scripts/simulate-sandbox-flow.mjs",
-    "verify": "npm run preflight:local && npm run lint && npm run typecheck && npm run test && npm run db:test && npm run test:rls && npm run test:concurrency && npm run build && npm run db:reset && npm run test:e2e"
+    "verify": "npm run preflight:local && npm run lint && npm run typecheck && npm run test && npm run db:reset && npm run db:test && npm run test:rls && npm run test:concurrency && npm run build && npm run db:reset && npm run test:e2e"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",

@@ -127,7 +127,7 @@ test("administración parametriza un punto de entrega sin exponer la dirección"
   await page.getByLabel("Organización responsable").selectOption({ label: "Aliados Unidos Demo" });
   await page.getByLabel("Nombre operativo").fill("Punto parametrizado E2E");
   await page.getByLabel("Zona pública aproximada").fill("Cali · zona occidental de práctica");
-  await page.getByLabel("Dirección exacta privada").fill("Dirección privada sintética E2E 123");
+  await page.getByLabel("Dirección exacta").fill("Dirección privada sintética E2E 123");
   await page.getByLabel("Instrucciones públicas (opcional)").fill("Coordina el horario después de recibir tu código APO.");
   await page.getByLabel("Agua", { exact: true }).check();
   await page.getByLabel("Higiene", { exact: true }).check();
@@ -147,7 +147,7 @@ test("administración parametriza un punto de entrega sin exponer la dirección"
   await page.getByLabel("Organización responsable").selectOption({ label: "Aliados Unidos Demo" });
   await page.getByLabel("Nombre operativo").fill("Base de despacho E2E");
   await page.getByLabel("Zona pública aproximada").fill("Cali · salida sur de práctica");
-  await page.getByLabel("Dirección exacta privada").fill("Dirección privada de despacho E2E 456");
+  await page.getByLabel("Dirección exacta").fill("Dirección privada de despacho E2E 456");
   await page.getByLabel("Centro de acopio").uncheck();
   await page.getByLabel("Centro de despacho").check();
   await expect(page.getByRole("group", { name: "Categorías que recibe" })).toHaveCount(0);
@@ -305,4 +305,71 @@ test("dashboard público ofrece filtros, tabla accesible y Excel seguro", async 
 test("Excel operativo bloquea visitantes sin sesión", async ({ request }) => {
   const response = await request.get("/api/exports/operations.xlsx");
   expect(response.status()).toBe(401);
+});
+
+/**
+ * G-028 · Ciclo «observar → corregir → volver a verificación».
+ *
+ * Antes de la migración 202608170006 este recorrido no existía: el verificador
+ * dejaba el aporte en «Con observaciones» y el aliado no tenía superficie para
+ * responder, así que el ingreso quedaba atrapado sin salida.
+ *
+ * La prueba crea su propio aporte por la interfaz real: el seed no trae
+ * ninguno, así que depender de datos previos la haría frágil.
+ */
+async function entrarComo(page: import("@playwright/test").Page, correo: string, destino = "/operaciones") {
+  await page.goto("/operaciones");
+  if (!page.url().includes("/ingresar")) {
+    await page.getByRole("button", { name: "Cerrar sesión" }).click();
+  }
+  await page.goto(`/ingresar?next=${destino}`);
+  await page.getByLabel("Correo").fill(correo);
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${destino.replace("/", "\/")}$`));
+}
+
+test("aliado responde una observación y el aporte vuelve a verificación", async ({ page }) => {
+  // 1. El aliado registra un aporte con una cantidad que después se corrige.
+  await entrarComo(page, "aliado@rutasolidaria.local", "/donar");
+  await page.getByRole("button", { name: "Agua potable", exact: true }).click();
+  await page.getByLabel("¿Qué es?").fill("Botellas selladas para el ciclo de corrección");
+  await page.locator("#quantity-0").fill("100");
+  await page.locator("#unit-0").selectOption("litro");
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.getByLabel("Nombre del donante (empresa o persona)").fill("Empresa donante del ciclo G-028");
+  await page.getByLabel("Correo de coordinación").fill("g028@example.local");
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Confirmar aporte" }).click();
+  const codigoAporte = (await page.locator(".ticket-code strong").textContent())?.trim();
+  expect(codigoAporte).toMatch(/APO-[A-F0-9]{24}/);
+
+  // 2. Verificación observa ESE aporte: la página también lista necesidades,
+  // que tienen sus propios botones con el mismo nombre.
+  await entrarComo(page, "admin@rutasolidaria.local");
+  const filaAporte = page.locator(".ops-row").filter({ hasText: codigoAporte! });
+  await expect(filaAporte).toBeVisible();
+  await filaAporte.getByRole("button", { name: "Observar" }).click();
+  await expect(filaAporte.getByText("Con observaciones")).toBeVisible({ timeout: 15000 });
+
+  // 3. El aliado encuentra la observación en su propia cola y responde.
+  await entrarComo(page, "aliado@rutasolidaria.local");
+  const bloque = page.locator("#aportes-observados");
+  await expect(bloque).toBeVisible();
+  await expect(bloque.getByText("Observación de verificación:").first()).toBeVisible();
+
+  await bloque.getByRole("button", { name: "Responder y corregir" }).first().click();
+  const respuesta = bloque.getByRole("textbox").last();
+
+  // La respuesta pasa por el mismo filtro de contenido sensible que el resto.
+  await respuesta.fill("Escríbeme al 300 123 4567 y coordinamos");
+  await bloque.getByRole("button", { name: "Enviar corrección" }).click();
+  await expect(bloque.locator(".field-error")).toBeVisible({ timeout: 15000 });
+
+  // 4. Con una respuesta válida el aporte sale de esta cola y vuelve a la de verificación.
+  await respuesta.fill("Cantidad ajustada contra la remisión física 0012");
+  await bloque.getByRole("button", { name: "Enviar corrección" }).click();
+  await expect(page.locator("#aportes-observados")).toBeHidden({ timeout: 15000 });
 });

@@ -1,6 +1,11 @@
 :root {
   --ink: #142522;
-  --muted: #5f6d68;
+  /* Era #5f6d68: pasaba 4,89:1 sobre --paper pero caía a 4,37 sobre --mint, que
+     es el fondo de todo estado seleccionado (lote elegido, tarjeta marcada,
+     tipo de aporte activo). El fallo era latente en diez fondos claros del
+     stylesheet y solo lo vimos cuando la auditoría entró a /operaciones/bodega
+     con sesión. #57645f da 5,58 sobre --paper y 4,99 sobre --mint. */
+  --muted: #57645f;
   /* Texto secundario sobre superficies teñidas, donde --muted no alcanza 4.5:1. */
   --muted-strong: #46534e;
   --forest: #153d37;
@@ -506,7 +511,11 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .lot-picker button strong, .lot-picker button span, .lot-picker button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lot-picker button strong { font-size: 11px; }
 .lot-picker button span { font-size: 11px; }
-.lot-picker button small { color: var(--muted); font-size: 10px; }
+/* La cantidad es el dato por el que se elige un lote, y estaba a 10px en el
+   color más tenue de la paleta: el número decisivo era lo menos legible del
+   control. Pasa a tinta plena y al tamaño del resto; la etiqueta del código
+   sigue siendo el identificador, no el criterio. */
+.lot-picker button small { color: var(--ink); font-size: 11px; font-weight: 700; }
 .ops-safety-note { display: flex; gap: 12px; margin-top: 24px; padding: 16px 18px; border: 1px solid #e5cfad; border-radius: var(--radius-sm); background: #fff9ef; color: #6d4b1d; }
 .ops-safety-note svg { flex: 0 0 auto; }
 .ops-safety-note strong { display: block; font-size: 12px; }
@@ -772,7 +781,14 @@ h3 { font-size: 20px; margin-bottom: 9px; }
   .ops-subnav a { min-width: max-content; }
   .delivery-points-layout { grid-template-columns: 1fr; }
   .delivery-point-form { position: static; }
-  .delivery-point-facts, .delivery-category-grid { grid-template-columns: 1fr; }
+  /* Los datos de un punto son etiquetas cortas con valores cortos —«Recibe:
+     Logística», «Despacha: No»—, así que apilarlos en una columna gastaba 245
+     de los 364 px de cada fila sin ganar legibilidad. Con 24 puntos eso daba
+     casi 16 pantallas de móvil. Se quedan en dos, como ya hacen `.ops-kpis` y
+     `.ops-request-facts` en este mismo ancho. La rejilla de categorías sí se
+     apila: ahí los nombres son largos. */
+  .delivery-point-facts { grid-template-columns: 1fr 1fr; }
+  .delivery-category-grid { grid-template-columns: 1fr; }
   .inline-form { grid-template-columns: 1fr 1fr; }
   .inline-form select, .inline-form button { grid-column: 1 / -1; }
   .lot-picker { grid-template-columns: 1fr; }
@@ -822,4 +838,27 @@ h3 { font-size: 20px; margin-bottom: 9px; }
   .form-section { padding: 0; }
   .form-shell { display: block; width: 100%; }
   .donation-ticket { border: 0; box-shadow: none; }
+}
+
+/* G-028 · Respuesta del aliado a una observación de verificación.
+   Reutiliza los tokens del sistema visual: naranja para "requiere atención",
+   sin paleta nueva ni movimiento decorativo. */
+.ops-row-stack { grid-template-columns: 1fr; }
+.amendment-prompt { display: flex; flex-direction: column; gap: 9px; align-items: flex-start; margin-top: 10px; }
+.amendment-observation { margin: 0; padding: 9px 12px; border-left: 3px solid var(--danger); border-radius: var(--radius-xs); background: var(--danger-soft); color: var(--ink); font-size: 12px; line-height: 1.5; }
+.amendment-observation strong { font-weight: 800; }
+.amendment-form { display: flex; flex-direction: column; gap: 13px; margin-top: 12px; padding: 15px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper); }
+.amendment-items { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; border: 0; }
+.amendment-items legend { padding: 0; margin-bottom: 2px; color: var(--muted-strong); font-size: 10px; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+.amendment-item { display: grid; grid-template-columns: 1fr 132px; gap: 12px; align-items: center; font-size: 13px; }
+.amendment-item > span { display: flex; flex-direction: column; gap: 2px; }
+.amendment-item small { color: var(--muted); font-size: 11px; }
+.amendment-item input { min-height: 44px; padding: 0 11px; border: 1px solid #9caea6; border-radius: var(--radius-xs); background: var(--white); font-size: 15px; }
+.amendment-note { display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+.amendment-note textarea { min-height: 76px; padding: 10px 11px; border: 1px solid #9caea6; border-radius: var(--radius-xs); background: var(--white); font: inherit; font-size: 15px; resize: vertical; }
+.amendment-note small { color: var(--muted); font-size: 11px; }
+.amendment-hint { margin: 0; color: var(--muted); font-size: 11px; }
+@media (max-width: 560px) {
+  .amendment-item { grid-template-columns: 1fr; }
+  .amendment-item input { width: 100%; }
 }
