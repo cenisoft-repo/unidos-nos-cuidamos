@@ -10,7 +10,7 @@
 -- 19 se actualiza el inventario destino · 20 el movimiento queda cerrado y auditable
 
 begin;
-select plan(54);
+select plan(56);
 
 -- ---------------------------------------------------------------- 1. necesidad de 50 kg
 
@@ -243,6 +243,23 @@ select is(
 select is(
   (select quantity_physical from public.inventory_lot_positions where lot_id = (select id from flow_lot)),
   10::numeric, '17 el origen conserva 10 kg físicos');
+
+-- G-049: el eje bodega a bodega tiene que verse en el mapa. Antes el destino se derivaba
+-- solo de la necesidad, que en un traslado no existe, así que la proyección nacía sin
+-- coordenada de llegada y no se publicaba nunca.
+select is(
+  (select count(*)::integer from public.public_logistics_projections
+   where source_type = 'dispatch' and source_id = (select id from flow_shipment)
+     and published
+     and origin_latitude is not null and origin_longitude is not null
+     and destination_latitude is not null and destination_longitude is not null),
+  1,
+  '17 el traslado en movimiento se publica en el mapa con origen y destino');
+select ok(
+  (select destination_label from public.public_logistics_projections
+   where source_type = 'dispatch' and source_id = (select id from flow_shipment))
+  like '%' || (select name from public.inventory_locations where id = (select id from flow_destination)) || '%',
+  '17 el destino trazado es la bodega de llegada, no un texto libre');
 
 -- ---------------------------------------------------------------- 18 a 20. destino y cierre
 
