@@ -9,6 +9,7 @@ import { enqueueOfflineReception, readOfflineReceptions, removeOfflineReception,
 import { StatusPill } from "./status-pill";
 import { numberFormat } from "@/lib/format";
 import { labelStatus } from "@/lib/constants";
+import { transportFromForm, transportProblem, TRANSPORT_MODES } from "@/lib/shipment-transport";
 
 type PromiseItem = { id: string; category: string; description: string; quantity_promised: number; quantity_received: number; quantity_rejected: number; unit: string; donations: { donor_tracking_code: string; status: string; organization_id: string } | null };
 type Location = { id: string; name: string; organization_id: string; accepts_donations: boolean; dispatches_shipments: boolean };
@@ -30,23 +31,10 @@ const MOVEMENT_LABELS: Record<string, string> = {
   incident: "Con novedad",
 };
 
-function transportFromForm(data: FormData) {
-  return {
-    mode: String(data.get("transport_mode") ?? ""),
-    company: String(data.get("transport_company") ?? "").trim(),
-    contact_name: String(data.get("transport_contact_name") ?? "").trim(),
-    contact_document: String(data.get("transport_contact_document") ?? "").trim(),
-    contact_phone: String(data.get("transport_contact_phone") ?? "").trim(),
-    vehicle: String(data.get("transport_vehicle") ?? "").trim(),
-    plate: String(data.get("transport_plate") ?? "").trim(),
-    responsible: String(data.get("transport_responsible") ?? "").trim(),
-  };
-}
-
 function TransportFields() {
   return (
     <>
-      <label><span>Tipo de transporte</span><select name="transport_mode" required defaultValue=""><option value="" disabled>Selecciona</option><option value="transportadora">Transportadora</option><option value="particular">Particular</option><option value="institucional">Vehículo institucional</option></select></label>
+      <label><span>Tipo de transporte</span><select name="transport_mode" required defaultValue=""><option value="" disabled>Selecciona</option>{TRANSPORT_MODES.map((mode) => <option value={mode.value} key={mode.value}>{mode.label}</option>)}</select></label>
       <label><span>Empresa transportadora</span><input name="transport_company" maxLength={160} placeholder="Obligatoria si es transportadora" /></label>
       <label><span>Nombre de quien transporta</span><input name="transport_contact_name" maxLength={160} required /></label>
       <label><span>Identificación</span><input name="transport_contact_document" maxLength={40} required /></label>
@@ -174,6 +162,8 @@ export function WarehouseConsole({
 
   async function prepareNeedShipment(allocation: Allocation, form: HTMLFormElement) {
     const data = new FormData(form);
+    const problem = transportProblem(transportFromForm(data));
+    if (problem) { setError(problem); return; }
     await run(allocation.id, "Despacho en preparación con su transporte registrado.", () =>
       supabase.rpc("create_shipment", {
         p_allocation_id: allocation.id,
@@ -188,6 +178,8 @@ export function WarehouseConsole({
 
   async function prepareTransferShipment(request: TransferRequest, form: HTMLFormElement) {
     const data = new FormData(form);
+    const problem = transportProblem(transportFromForm(data));
+    if (problem) { setError(problem); return; }
     await run(request.id, "Traslado en preparación con su transporte registrado.", () =>
       supabase.rpc("create_shipment", {
         p_allocation_id: null,

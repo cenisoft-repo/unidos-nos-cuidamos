@@ -1,5 +1,25 @@
 # Estado comprobado
 
+## Loop de consolidación · 2026-08-19 · sin ejecución de base de datos
+
+Esta iteración implementó las dieciocho fases del loop de consolidación de donaciones,
+inventario y logística. Lo que se pudo comprobar en este entorno: `eslint`, `tsc --noEmit`,
+`next build`, 47/47 pruebas unitarias y la validación sintáctica de las 31 migraciones y los
+tres archivos pgTAP con el analizador oficial de PostgreSQL.
+
+Lo que **no** se ejecutó y sigue pendiente: pgTAP (193 estructurales + 38 de recorrido + 44 del
+flujo completo), RLS, concurrencia y los 36 Playwright. El entorno de esta sesión no pudo
+levantar Supabase local porque la política de egreso bloquea la descarga de las imágenes de
+contenedor. Hasta que `npm run verify` corra verde con Docker (`G-032`), el resultado de esta
+iteración es código revisado y no verificado contra una base de datos.
+
+Cambios de contrato que exigen atención al aplicar: `submit_donation_intake_v2` pasa de dieciséis
+a diecisiete parámetros, `create_shipment` de cinco a siete, `register_delivery` de cuatro a
+cinco, `shipments.carrier_name` se retira y `auth.enable_signup` se abre con confirmación de
+correo obligatoria. Los cuatro llamadores de scripts y las pruebas SQL ya están actualizados.
+
+---
+
 Fecha: 2026-08-17 · Puerta: G1 sandbox publicado para demostración interna exclusivamente sintética. `G-021` (P0) quedó cerrado local y remoto; para G2 resta repetir la simulación remota que confirme también `G-022` y los pendientes P1 `G-023`–`G-025`.
 
 Supabase y Next.js locales están activos con datos 100 % sintéticos. La base se reconstruye con 17 migraciones. Pasan 152 pruebas SQL, RLS, concurrencia real, 33 unitarias y 28 Playwright en navegador y móvil; lint, TypeScript y build están verdes. La salud HTTP entrega request ID, duración y estado de base; las exportaciones registran telemetría estructurada sin PII.
@@ -12,7 +32,7 @@ El registro de aportes consume ocho catálogos autoritativos versionados: tipos 
 
 Las solicitudes ahora se presentan como fichas de decisión: distinguen necesidad ciudadana de aporte reportado, muestran un resumen en lenguaje natural, código, cantidad, centro, aliado relacionado, fotos privadas, fecha y siguiente control. La confirmación del aporte explica expresamente que crea una solicitud de verificación, no una solicitud de ayuda, recibo o constancia de entrega.
 
-La entrada ciudadana conserva moderación y honeypot, y ahora limita cinco reportes exitosos por origen/evento cada diez minutos mediante un hash SHA-256 sin IP en claro. Auth bloquea el auto-registro, exige 12 caracteres con mayúsculas, minúsculas, dígitos y símbolo, requiere reautenticación para cambiar contraseña y limita sesiones a 12 h/2 h de inactividad.
+La entrada ciudadana conserva moderación y honeypot, y ahora limita cinco reportes exitosos por origen/evento cada diez minutos mediante un hash SHA-256 sin IP en claro. Auth bloqueaba el auto-registro; desde la consolidación del 19 de agosto el alta está abierta pero exige confirmación de correo y no otorga ningún permiso por sí sola (ADR-007). Exige 12 caracteres con mayúsculas, minúsculas, dígitos y símbolo, requiere reautenticación para cambiar contraseña y limita sesiones a 12 h/2 h de inactividad.
 
 La recuperación local fue ejecutada: snapshot de esquema/datos, manifiesto con checksums, reconstrucción desde migraciones, restauración y 94 pgTAP. RTO observado: 57,1 segundos. El procedimiento y sus límites están en `docs/OPERATIONAL_READINESS.md`.
 

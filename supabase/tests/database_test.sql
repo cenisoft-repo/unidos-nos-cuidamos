@@ -1,5 +1,5 @@
 begin;
-select plan(159);
+select plan(193);
 
 select is((
   select count(*)::integer
@@ -621,6 +621,54 @@ select is(
   0,
   'La auditoría de tablas hijas conserva el evento derivado del padre'
 );
+
+-- ============================================================ consolidación 2026-08-19
+-- Superficies que el loop de consolidación introduce o rehace. Comprueban el contrato:
+-- que exista, que esté concedida a quien debe y que no lo esté a quien no debe.
+
+select has_table('public', 'ally_registrations', 'Existe el registro único de aliados');
+select has_table('public', 'transfer_requests', 'Existe la solicitud de traslado entre bodegas');
+select has_table('public', 'membership_locations', 'Existe el alcance por bodega de una membresía');
+select has_view('public', 'inventory_lot_positions', 'La posición del lote es una vista derivada, no una tabla de saldos');
+select has_view('public', 'need_item_positions', 'La posición de la necesidad es una vista derivada');
+select has_column('public', 'donation_intakes', 'need_case_id', 'El aporte conserva la necesidad desde la que nació');
+select has_column('public', 'donation_intake_items', 'need_item_id', 'Cada línea del aporte conserva a qué artículo responde');
+select has_column('public', 'donation_items', 'need_item_id', 'La donación operacional conserva a qué artículo responde');
+select has_column('public', 'deliveries', 'quantity_missing', 'El faltante se registra aparte del daño');
+select has_column('public', 'shipments', 'transport_mode', 'El despacho conserva el tipo de transporte');
+select has_column('public', 'shipments', 'transport_plate', 'El despacho conserva la placa del vehículo');
+select has_column('public', 'shipments', 'destination_location_id', 'El despacho puede tener una bodega de destino');
+select hasnt_column('public', 'shipments', 'carrier_name', 'El campo de transportador suelto quedó retirado');
+select has_function('public', 'register_ally', array['uuid','ally_kind','text','text','text','text','text','text','numeric','numeric','text'], 'Existe el registro único de aliado');
+select has_function('public', 'activate_ally_registration', array[]::text[], 'Existe la activación con correo confirmado');
+select has_function('public', 'need_help_options', array['uuid'], 'Existe el contrato del camino AYUDAR');
+select has_function('public', 'inventory_position', array['uuid'], 'Existe el estado global del inventario');
+select has_function('public', 'request_stock_transfer', array['uuid','uuid','text','text','numeric','text','text'], 'Existe la solicitud de traslado');
+select has_function('public', 'decide_stock_transfer', array['uuid','text','numeric','text'], 'Existe la autorización de traslado');
+select has_function('public', 'create_shipment', array['uuid','uuid','uuid','uuid','text','jsonb','text'], 'Existe el constructor único de despachos');
+select has_function('public', 'dispatch_shipment', array['uuid'], 'Existe la salida física separada de la preparación');
+select has_function('public', 'advance_shipment', array['uuid','text'], 'Existe el seguimiento del movimiento');
+select has_function('public', 'register_delivery', array['uuid','numeric','numeric','numeric','text'], 'La entrega distingue recibido, dañado y faltante');
+select has_function('public', 'shipment_reconciliation', array['uuid'], 'Existe la conciliación despachado contra recibido');
+select has_function('public', 'organization_delivery_points_near', array['uuid','uuid','double precision','double precision'], 'Existe el orden por proximidad de puntos de acopio');
+
+select ok(has_function_privilege('anon','public.register_ally(uuid,public.ally_kind,text,text,text,text,text,text,numeric,numeric,text)','EXECUTE'), 'Cualquiera puede iniciar el registro de aliado');
+select ok(not has_function_privilege('anon','public.activate_ally_registration()','EXECUTE'), 'Nadie activa una cuenta ALIADO sin sesión');
+select ok(not has_function_privilege('authenticated','public.reserve_lot_quantity(uuid,numeric,uuid,uuid,text)','EXECUTE'), 'La primitiva de reserva no se ejecuta desde el cliente');
+select ok(not has_function_privilege('authenticated','public.assert_transport_ready(uuid)','EXECUTE'), 'La regla de transporte no se ejecuta desde el cliente');
+select ok(not has_function_privilege('anon','public.inventory_position(uuid)','EXECUTE'), 'El inventario no es una superficie pública');
+select ok(not has_table_privilege('anon','public.transfer_requests','SELECT'), 'Los traslados internos no son públicos');
+select ok(not has_table_privilege('anon','public.ally_registrations','SELECT'), 'El NIT y el contacto del aliado no son públicos');
+
+-- La posición del lote es aritmética del Kardex: el ejemplo de la Fase 8 debe cuadrar.
+select is(
+  (select quantity_available from public.inventory_lot_positions where lot_id = '71200000-0000-0000-0000-000000000001'),
+  0::numeric,
+  'El lote de demostración quedó sin disponible tras reservar y despachar sus 40 unidades');
+select is(
+  (select quantity_in_transit from public.inventory_lot_positions where lot_id = '71200000-0000-0000-0000-000000000001'),
+  40::numeric,
+  'Las 40 unidades despachadas figuran en movimiento hasta que el destino confirme');
 
 select * from finish();
 rollback;

@@ -33,11 +33,14 @@ las duplicaciones que deben resolverse antes de implementar.
 | **Mover productos entre bodegas** | **Ninguna.** Los valores `transfer_in`/`transfer_out` del enum `stock_movement_type` están declarados y **no se usan en ninguna parte** del repositorio | **Funcionalidad ausente**, no duplicada. `CREAR`. Es el hueco que impide los pasos 12 a 19 de la Fase 17. |
 | **Registrar entregas** | `register_delivery` (único) + `validate_delivery` (verificación independiente) | **Camino único.** `REFACTORIZAR` por lo dicho en §1. |
 | **Administrar bodegas** | `manage_delivery_point` (único, idempotente, versiona reglas y audita) | **Camino único.** `MANTENER`. |
-| **Consultar trazabilidad** | `track_public_code` (cuatro etapas fijas) y `track_public_journey` (cadena real de hitos) | **Duplicado real.** El front ya usa las dos en la misma pantalla. `FUSIONAR` bajo `track_public_journey`. |
+| **Consultar trazabilidad** | `track_public_code` (estado vigente) y `track_public_journey` (cadena de hitos con fecha) | **No es duplicación.** Responden preguntas distintas —«dónde está» y «por dónde pasó»— y la pantalla las usa juntas a propósito. `MANTENER`. |
 
 ## 3. Consecuencia para el orden de implementación
 
 La cadena que pide el principio arquitectónico final se rompe en tres puntos, y solo en tres:
+
+La revisión de la superficie de seguimiento corrigió una clasificación inicial: las dos RPC de
+trazabilidad no son dos implementaciones de la misma operación.
 
 1. **Antes de la donación**: no hay ALIADO autorregistrado ni confirmación de correo, y la donación
    no puede nacer desde una necesidad (`donation_intakes` no tiene ningún vínculo con `need_cases`).

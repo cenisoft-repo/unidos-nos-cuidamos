@@ -534,7 +534,7 @@ begin
     raise exception using
       errcode = '22023',
       message = format('La bodega de origen no tiene %s %s disponibles de %s',
-        trim(to_char(p_quantity_authorized, 'FM999999990.999')), request.unit, request.category);
+        public.format_quantity(p_quantity_authorized), request.unit, request.category);
   end if;
 
   update public.transfer_requests
@@ -889,7 +889,7 @@ begin
      or p_quantity_delivered + p_quantity_damaged + coalesce(p_quantity_missing, 0) <> shipped then
     raise exception using
       errcode = '22023',
-      message = format('Lo recibido, lo dañado y el faltante deben sumar %s', trim(to_char(shipped, 'FM999999990.999')));
+      message = format('Lo recibido, lo dañado y el faltante deben sumar %s', public.format_quantity(shipped));
   end if;
 
   insert into public.deliveries(

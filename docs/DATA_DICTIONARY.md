@@ -15,6 +15,10 @@
 | Logística cartográfica pública | Pública aproximada | Centro, código/estado de despacho y origen-destino aproximados; sin dirección, transportador, custodio o GPS |
 | Punto de entrega parametrizado | Mixta | Nombre, zona, instrucción, coordenada aproximada, capacidad y categorías son públicas/organizacionales según superficie; `exact_address_private` es restringida y nunca sale en mapa, formulario del aliado ni Excel público |
 | Historial de parametrización | Confidencial append-only | `delivery_point_changes` conserva actor, tenant, punto, idempotencia y huella; las reglas anteriores se cierran por vigencia y no se borran |
+| Registro de aliado | Restringida | `ally_registrations` guarda razón social, NIT, responsable, teléfono y correo; solo los ve la propia cuenta y la verificación/administración del evento. El identificador `alias@rutasolidaria.co` es una identidad de plataforma, no un buzón, y no se publica |
+| Transporte del despacho | Restringida | Tipo, empresa, nombre, identificación, teléfono, vehículo, placa y responsable viven en `shipments` y nunca entran a la proyección logística pública |
+| Traslado entre bodegas | Interna | `transfer_requests` conserva origen, destino, cantidad solicitada y autorizada, justificación y quién decidió; no tiene superficie pública |
+| Alcance por bodega | Interna | `membership_locations` declara qué puntos administra una membresía; sin filas, el alcance es toda la organización |
 | Auditoría | Confidencial append-only | Auditor/admin; conservación según política aprobada futura |
 
 Todas las entidades incluyen UUID, evento/organización aplicable, estado, autor/origen, timestamps y clasificación de visibilidad. Los detalles de campos viven en las migraciones versionadas.

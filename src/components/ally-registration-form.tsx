@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, LoaderCircle, MailCheck } from "lucide-react";
+import { CheckCircle2, LoaderCircle, MailCheck, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toOperationalMessage } from "@/lib/user-errors";
 import { EVENT_ID } from "@/lib/constants";
@@ -21,6 +21,10 @@ export const ALLY_KINDS = [
 type Registered = { platform_identifier: string; email: string };
 
 export function AllyRegistrationForm() {
+  // La coordenada aproximada es opcional: sirve para recomendar el punto más cercano y nunca
+  // se publica como dirección exacta.
+  const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationNotice, setLocationNotice] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [registered, setRegistered] = useState<Registered | null>(null);
@@ -44,6 +48,9 @@ export function AllyRegistrationForm() {
       p_responsible_name: String(form.get("responsible_name") ?? "").trim(),
       p_contact_phone: String(form.get("contact_phone") ?? "").trim(),
       p_contact_email: email,
+      p_public_location_text: String(form.get("public_location") ?? "").trim(),
+      p_public_latitude: coordinates?.latitude ?? null,
+      p_public_longitude: coordinates?.longitude ?? null,
       p_bot_field: String(form.get("website") ?? ""),
     });
     if (registerError) {
@@ -127,6 +134,28 @@ export function AllyRegistrationForm() {
           <label htmlFor="responsible_name">Responsable</label>
           <input id="responsible_name" name="responsible_name" minLength={3} maxLength={120} required />
           <small>Persona que responde por los aportes registrados.</small>
+        </div>
+        <div className="field">
+          <label htmlFor="public_location">Zona pública desde la que entregas</label>
+          <input id="public_location" name="public_location" minLength={4} maxLength={120} required placeholder="Municipio y sector amplio" />
+          <small>Se usa para crear tu punto de acopio. No escribas la dirección exacta.</small>
+          <div className="center-proximity">
+            <button className="button button-outline button-small" type="button" onClick={() => {
+              if (!navigator.geolocation) {
+                setLocationNotice("Este navegador no puede compartir tu ubicación.");
+                return;
+              }
+              navigator.geolocation.getCurrentPosition(
+                (position) => {
+                  setCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+                  setLocationNotice("Coordenada aproximada registrada.");
+                },
+                () => setLocationNotice("No compartiste tu ubicación; el registro sigue siendo válido."),
+                { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+              );
+            }}><MapPin size={14} /> Usar mi ubicación aproximada</button>
+            {locationNotice && <small role="status">{locationNotice}</small>}
+          </div>
         </div>
         <div className="field">
           <label htmlFor="email">Correo de contacto</label>

@@ -18,9 +18,21 @@ La persona debe poder responder, sin capacitación:
 
 `Entender → explorar necesidades → elegir una → ayudar o reportar → guardar código → comprobar estado`
 
+### Aliado nuevo
+
+`Registro único (empresa/ONG/fundación/entidad/persona) → confirmación de correo → activación → rol ALIADO`
+
+La cuenta no puede registrar aportes antes de confirmar el correo. La activación crea la
+organización, la membresía y el punto de acopio del aliado, y le entrega su identificador
+`alias@rutasolidaria.co`, que es una identidad de plataforma y no un buzón real.
+
 ### Donante o aliado
 
 `Elegir categoría y describir cantidad → definir entrega (solo especie) → registrar contacto privado → revisar → recibir ticket/QR → seguir`
+
+Desde una necesidad publicada el recorrido entra por AYUDAR: la categoría y la unidad las fija
+la necesidad, la cantidad la decide el aliado —puede aportar una parte— y puede agregar otros
+artículos en la misma operación. En el paso de entrega puede ordenar los puntos por cercanía.
 
 ### Operación
 

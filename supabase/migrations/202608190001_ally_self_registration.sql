@@ -27,6 +27,9 @@ create table public.ally_registrations (
   responsible_name text not null check (char_length(btrim(responsible_name)) between 3 and 120),
   contact_phone text not null check (char_length(btrim(contact_phone)) between 7 and 30),
   contact_email text not null check (contact_email = lower(contact_email) and contact_email like '%@%'),
+  public_location_text text not null check (char_length(btrim(public_location_text)) between 4 and 120),
+  public_latitude numeric(9,6),
+  public_longitude numeric(9,6),
   platform_username text not null unique check (platform_username ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
   platform_identifier text not null unique,
   status public.ally_registration_status not null default 'pending_email',
@@ -122,6 +125,9 @@ create or replace function public.register_ally(
   p_responsible_name text,
   p_contact_phone text,
   p_contact_email text,
+  p_public_location_text text,
+  p_public_latitude numeric,
+  p_public_longitude numeric,
   p_bot_field text default null
 )
 returns table(registration_id uuid, platform_identifier text, status public.ally_registration_status)
@@ -140,6 +146,7 @@ declare
   normalized_tax text := upper(regexp_replace(coalesce(p_tax_id, ''), '[^A-Za-z0-9-]', '', 'g'));
   normalized_phone text := btrim(coalesce(p_contact_phone, ''));
   normalized_responsible text := btrim(coalesce(p_responsible_name, ''));
+  normalized_zone text := btrim(coalesce(p_public_location_text, ''));
   existing public.ally_registrations;
   created public.ally_registrations;
   username text;
@@ -170,6 +177,19 @@ begin
   end if;
   if normalized_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[a-z]{2,}$' then
     raise exception using errcode = '22023', message = 'Escribe un correo de contacto válido';
+  end if;
+  if char_length(normalized_zone) < 4 or char_length(normalized_zone) > 120 then
+    raise exception using errcode = '22023', message = 'Escribe la zona pública desde la que entregas (municipio y sector amplio)';
+  end if;
+  if public.contains_sensitive_content(normalized_zone) then
+    raise exception using errcode = '22023', message = 'La zona pública no puede incluir teléfonos, cuentas ni enlaces';
+  end if;
+  if (p_public_latitude is null) <> (p_public_longitude is null) then
+    raise exception using errcode = '22023', message = 'La coordenada aproximada necesita latitud y longitud';
+  end if;
+  if p_public_latitude is not null
+     and (p_public_latitude not between -90 and 90 or p_public_longitude not between -180 and 180) then
+    raise exception using errcode = '22023', message = 'La coordenada aproximada no es válida';
   end if;
 
   begin
@@ -220,6 +240,9 @@ begin
         tax_id = normalized_tax,
         responsible_name = normalized_responsible,
         contact_phone = normalized_phone,
+        public_location_text = normalized_zone,
+        public_latitude = p_public_latitude,
+        public_longitude = p_public_longitude,
         status = 'pending_email'
     where id = existing.id
     returning * into created;
@@ -230,10 +253,12 @@ begin
   username := public.build_platform_username(normalized_name);
   insert into public.ally_registrations(
     event_id, ally_kind, legal_name, tax_id, responsible_name,
-    contact_phone, contact_email, platform_username, platform_identifier
+    contact_phone, contact_email, public_location_text, public_latitude, public_longitude,
+    platform_username, platform_identifier
   ) values (
     p_event_id, p_ally_kind, normalized_name, normalized_tax, normalized_responsible,
-    normalized_phone, normalized_email, username, username || '@' || public.platform_identity_domain()
+    normalized_phone, normalized_email, normalized_zone, p_public_latitude, p_public_longitude,
+    username, username || '@' || public.platform_identity_domain()
   )
   returning * into created;
 
@@ -241,11 +266,11 @@ begin
 end;
 $$;
 
-revoke all on function public.register_ally(uuid, public.ally_kind, text, text, text, text, text, text)
+revoke all on function public.register_ally(uuid, public.ally_kind, text, text, text, text, text, text, numeric, numeric, text)
   from public, anon, authenticated;
-grant execute on function public.register_ally(uuid, public.ally_kind, text, text, text, text, text, text)
+grant execute on function public.register_ally(uuid, public.ally_kind, text, text, text, text, text, text, numeric, numeric, text)
   to anon, authenticated;
-comment on function public.register_ally(uuid, public.ally_kind, text, text, text, text, text, text) is
+comment on function public.register_ally(uuid, public.ally_kind, text, text, text, text, text, text, numeric, numeric, text) is
   'Paso Registro: guarda el aliado declarado y reserva su identificador. No crea usuario, organización ni permiso alguno.';
 
 -- Paso 3 del recorrido: Activación. Es la única puerta que entrega el rol ALIADO y exige que
@@ -269,6 +294,8 @@ declare
   registration public.ally_registrations;
   created_org public.organizations;
   organization_slug text;
+  ally_point uuid;
+  in_kind_category text;
 begin
   if actor_id is null then
     raise exception using errcode = '42501', message = 'Debes iniciar sesión para activar la cuenta';
@@ -334,6 +361,48 @@ begin
   insert into public.memberships(user_id, organization_id, event_id, role, active)
   values (actor_id, created_org.id, registration.event_id, 'partner_reporter', true)
   on conflict (user_id, organization_id, event_id, role) do update set active = true;
+
+  -- La operación administra el punto del aliado igual que administra los suyos: sin estas
+  -- membresías, lo que el aliado entrega quedaría almacenado y sin nadie que pueda moverlo.
+  insert into public.memberships(user_id, organization_id, event_id, role)
+  select distinct existing.user_id, created_org.id, registration.event_id, existing.role
+  from public.memberships as existing
+  where existing.event_id = registration.event_id
+    and existing.active
+    and existing.role in ('event_admin','warehouse_operator','logistics_operator')
+  on conflict (user_id, organization_id, event_id, role) do nothing;
+
+  -- El punto nace habilitado para recibir y para entregar a la operación: si solo recibiera,
+  -- lo entregado allí no podría continuar la cadena.
+  insert into public.inventory_locations(
+    event_id, organization_id, name, public_location_text, exact_address_private,
+    public_instructions, public_latitude, public_longitude, cold_chain_capable,
+    active, accepts_donations, dispatches_shipments
+  ) values (
+    registration.event_id, created_org.id, 'Acopio ' || created_org.name,
+    registration.public_location_text, null,
+    'Coordina el horario después de recibir tu código APO.',
+    registration.public_latitude, registration.public_longitude, false,
+    true, true, true
+  )
+  returning id into ally_point;
+
+  for in_kind_category in
+    select distinct option.value ->> 'parent_category'
+    from public.donation_flow_catalogs() as catalog,
+      jsonb_array_elements(catalog.values_json) as option(value)
+    where catalog.key = 'donation_categories'
+      and option.value ->> 'kind' = 'in_kind'
+      and option.value ->> 'parent_category' is not null
+  loop
+    insert into public.item_acceptance_rules(
+      organization_id, event_id, location_id, category, decision, rule_text,
+      requires_cold_chain, version, effective_from
+    ) values (
+      created_org.id, registration.event_id, ally_point, in_kind_category, 'accepted',
+      'Categoría habilitada en la parametrización inicial del aliado.', false, 1, now()
+    );
+  end loop;
 
   update public.ally_registrations
   set status = 'activated',

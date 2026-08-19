@@ -11,6 +11,12 @@
 
 7. ✓ Endurecimiento G1: antiabuso, Auth, observabilidad, recuperación, offline, CI y runbooks.
 
+8. ✓ Consolidación 2026-08-19: auditoría, ALIADO autorregistrado, necesidad con aportes
+   parciales y camino AYUDAR, inventario derivado del Kardex, traslado entre bodegas con
+   autorización y transporte obligatorio, recepción con faltante y daño separados, reportes
+   operativos y limpieza de componentes sustituidos. **Pendiente de ejecución con base de
+   datos**: `npm run verify` en un entorno con Docker.
+
 ## Criterio de salida
 
 - Cumplido y revalidado en el entorno local del 15 de agosto de 2026.

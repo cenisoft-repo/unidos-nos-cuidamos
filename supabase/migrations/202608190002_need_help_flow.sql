@@ -11,6 +11,17 @@
 -- derivan de `donation_items`, que es donde vive el compromiso real. La proyección pública sí
 -- conserva una copia, porque es una superficie de lectura y ya funcionaba así.
 
+-- Cantidades legibles para los mensajes de la operación: 25.000 se lee «25» y 25.500 se lee
+-- «25.5». Vive en un solo lugar porque lo usan el aporte, el traslado y la conciliación.
+create or replace function public.format_quantity(p_quantity numeric)
+returns text language sql immutable set search_path = '' as $$
+  select rtrim(rtrim(to_char(coalesce(p_quantity, 0), 'FM999999990.999'), '0'), '.');
+$$;
+
+revoke all on function public.format_quantity(numeric) from public, anon, authenticated;
+comment on function public.format_quantity(numeric) is
+  'Cantidad sin ceros ni separador decimal sobrantes, para mensajes dirigidos a personas.';
+
 alter table public.donation_intakes
   add column need_case_id uuid references public.need_cases(id);
 alter table public.donation_intake_items
@@ -47,20 +58,28 @@ select
   need_item.unit,
   need_item.quantity_required as quantity_requested,
   coalesce(commitment.promised, 0) as quantity_committed,
-  coalesce(commitment.received, 0) as quantity_received,
+  coalesce(reception.received, 0) as quantity_received,
   need_item.quantity_covered as quantity_delivered,
   greatest(need_item.quantity_required - coalesce(commitment.promised, 0), 0) as quantity_pending
 from public.need_items as need_item
 join public.need_cases as need_case on need_case.id = need_item.need_case_id
+-- El compromiso nace cuando el aliado confirma el aporte, no cuando alguien lo aprueba: si
+-- se contara solo lo aprobado, dos aliados podrían comprometer la misma cantidad mientras la
+-- verificación decide. Lo recibido, en cambio, solo existe tras la recepción física.
 left join lateral (
-  select
-    sum(donation_item.quantity_promised) as promised,
-    sum(donation_item.quantity_received) as received
+  select sum(intake_item.quantity) as promised
+  from public.donation_intake_items as intake_item
+  join public.donation_intakes as intake on intake.id = intake_item.intake_id
+  where intake_item.need_item_id = need_item.id
+    and intake.status in ('reported','pending_verification','observed','approved')
+) as commitment on true
+left join lateral (
+  select sum(donation_item.quantity_received) as received
   from public.donation_items as donation_item
   join public.donations as donation on donation.id = donation_item.donation_id
   where donation_item.need_item_id = need_item.id
     and donation.status not in ('rejected','cancelled')
-) as commitment on true;
+) as reception on true;
 
 grant select on public.need_item_positions to authenticated;
 comment on view public.need_item_positions is
@@ -162,6 +181,12 @@ begin
   return null;
 end;
 $$;
+
+-- El compromiso cambia al registrar el aporte y lo recibido cambia al conciliar la recepción:
+-- las dos tablas alimentan la misma proyección con el mismo disparador.
+create trigger donation_intake_items_need_commitment
+after insert or update or delete on public.donation_intake_items
+for each row execute function public.sync_need_commitment_trigger();
 
 create trigger donation_items_need_commitment
 after insert or update or delete on public.donation_items
@@ -365,9 +390,11 @@ begin
       if linked_need_item is null then
         continue;
       end if;
+      -- El bloqueo del artículo serializa dos aportes simultáneos contra lo mismo pendiente.
       select * into need_item
       from public.need_items as candidate
-      where candidate.id = linked_need_item and candidate.need_case_id = need_case.id;
+      where candidate.id = linked_need_item and candidate.need_case_id = need_case.id
+      for update;
       if need_item.id is null then
         raise exception using errcode = '22023', message = 'Uno de los artículos no corresponde a esta necesidad';
       end if;
@@ -376,15 +403,15 @@ begin
         raise exception using errcode = '22023',
           message = 'La categoría y la unidad del aporte deben coincidir con las de la necesidad';
       end if;
-      select greatest(need_item.quantity_required - coalesce(sum(donation_item.quantity_promised), 0), 0)
+      select greatest(need_item.quantity_required - coalesce(sum(intake_item.quantity), 0), 0)
       into pending_quantity
-      from public.donation_items as donation_item
-      join public.donations as donation on donation.id = donation_item.donation_id
-      where donation_item.need_item_id = need_item.id
-        and donation.status not in ('rejected','cancelled');
+      from public.donation_intake_items as intake_item
+      join public.donation_intakes as intake on intake.id = intake_item.intake_id
+      where intake_item.need_item_id = need_item.id
+        and intake.status in ('reported','pending_verification','observed','approved');
       if (item ->> 'quantity')::numeric > pending_quantity then
         raise exception using errcode = '22023',
-          message = format('A esa necesidad solo le faltan %s %s', trim(to_char(pending_quantity, 'FM999999990.999')), need_item.unit);
+          message = format('A esa necesidad solo le faltan %s %s', public.format_quantity(pending_quantity), need_item.unit);
       end if;
     end loop;
   end if;
