@@ -34,6 +34,41 @@ describe("mensajes operativos", () => {
     );
   });
 
+  /*
+   * Errores de Auth. El registro de aliado los produjo en producción y la vista mostraba
+   * el mensaje genérico: la persona veía «no fue posible» sin saber que su contraseña era
+   * corta. Un mensaje que no dice qué corregir es un error sin arreglar.
+   */
+  it("explica por qué se rechazó la contraseña en vez de rendirse", () => {
+    const message = toOperationalMessage({
+      code: "weak_password",
+      message: "Password should be at least 12 characters. Password should contain at least one character of each: abcdefghijklmnopqrstuvwxyz, ABCDEFGHIJKLMNOPQRSTUVWXYZ, 0123456789",
+    });
+    expect(message).toMatch(/12 caracteres/);
+    expect(message).toMatch(/símbolo/);
+    // No se reenvía el texto del servicio: llega en inglés y con el alfabeto entero dentro.
+    expect(message).not.toMatch(/abcdefghijklmnopqrstuvwxyz/);
+  });
+
+  it("dice que el correo ya tiene cuenta sin insinuar nada más", () => {
+    expect(toOperationalMessage({ code: "user_already_exists", message: "User already registered" })).toBe(
+      "Ese correo ya tiene una cuenta. Ingresa con tu contraseña o recupérala.",
+    );
+  });
+
+  it("distingue un fallo de envío de correo de un fallo cualquiera", () => {
+    const message = toOperationalMessage({ code: "unexpected_failure", message: "Error sending confirmation email" });
+    expect(message).toMatch(/correo de confirmación/);
+    expect(message).not.toBe(GENERIC_ACTION_ERROR);
+  });
+
+  it("conserva el mensaje de regla de negocio por encima de los patrones de Auth", () => {
+    // `22023` es contrato: su texto ya viene redactado para la persona y manda.
+    expect(toOperationalMessage({ code: "22023", message: "Escribe un correo de contacto válido" })).toBe(
+      "Escribe un correo de contacto válido",
+    );
+  });
+
   it("acepta un error ausente sin romper la vista", () => {
     expect(toOperationalMessage(null)).toBe(GENERIC_ACTION_ERROR);
   });
