@@ -15,22 +15,59 @@
  *   5. despachos en movimiento esperando recepción en destino
  *
  * Uso (PowerShell):
- *   $env:DEMO_SUPABASE_URL = 'https://<ref>.supabase.co'
- *   $env:DEMO_SUPABASE_KEY = '<clave publicable>'
- *   $env:DEMO_PASSWORD     = '<contrasena de las cuentas del sandbox>'
+ *   $env:DEMO_PROJECT_REF = '<ref del proyecto>'
+ *   $env:DEMO_PASSWORD    = '<contrasena de las cuentas del sandbox>'
  *   node scripts/seed-demo-journey.mjs
+ *
+ * La clave publicable la obtiene el script del CLI de Supabase para no tener que pegarla:
+ * es larga y algunas terminales la enmascaran, lo que produce un error que no se parece
+ * en nada a su causa. Para un entorno local, se pueden pasar DEMO_SUPABASE_URL y
+ * DEMO_SUPABASE_KEY directamente.
  *
  * Opcional: DEMO_COUNT (4 por defecto) y DEMO_ALLY / DEMO_ADMIN / DEMO_WAREHOUSE.
  */
+import { execFileSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 
-const url = process.env.DEMO_SUPABASE_URL;
-const key = process.env.DEMO_SUPABASE_KEY;
+/*
+ * La clave publicable no se pega a mano. Es una cadena larga y algunas terminales y
+ * gestores de portapapeles la enmascaran al pegarla —sustituyen los caracteres por
+ * viñetas—, y entonces el fallo aparece como un críptico «Cannot convert argument to a
+ * ByteString» que no tiene nada que ver con la causa. Se le pide al CLI de Supabase, que
+ * ya está autenticado en la máquina.
+ */
+function claveDelProyecto(ref) {
+  const salida = execFileSync("npx", ["supabase", "projects", "api-keys", "--project-ref", ref, "-o", "json"], {
+    encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], shell: process.platform === "win32",
+  });
+  const anon = JSON.parse(salida).find((c) => c.name === "anon");
+  if (!anon?.api_key) throw new Error(`el proyecto ${ref} no devolvió una clave publicable`);
+  return anon.api_key;
+}
+
+const ref = process.env.DEMO_PROJECT_REF;
+let url = process.env.DEMO_SUPABASE_URL;
+let key = process.env.DEMO_SUPABASE_KEY;
 const password = process.env.DEMO_PASSWORD;
 const count = Number(process.env.DEMO_COUNT ?? 4);
 
+if (ref && !key) {
+  url = url ?? `https://${ref}.supabase.co`;
+  console.log(`Obteniendo la clave publicable de ${ref} con el CLI de Supabase...`);
+  key = claveDelProyecto(ref);
+}
+
 if (!url || !key || !password) {
-  console.error("Faltan DEMO_SUPABASE_URL, DEMO_SUPABASE_KEY o DEMO_PASSWORD.");
+  console.error("Falta configuración. Usa una de las dos formas:");
+  console.error("  DEMO_PROJECT_REF=<ref> DEMO_PASSWORD=<clave>            (recomendado: toma la clave del CLI)");
+  console.error("  DEMO_SUPABASE_URL=<url> DEMO_SUPABASE_KEY=<clave publicable> DEMO_PASSWORD=<clave>");
+  process.exit(1);
+}
+
+// Si algo enmascaró la clave al pegarla, decirlo por su nombre en vez de fallar adentro.
+if (!/^[ -~]+$/.test(key)) {
+  console.error("La clave publicable trae caracteres que no son ASCII: casi seguro tu terminal la enmascaró al pegarla.");
+  console.error("Usa DEMO_PROJECT_REF=vcgwfyhytzgyzicfbikf y deja que el script la obtenga solo.");
   process.exit(1);
 }
 
