@@ -51,7 +51,7 @@ function claveDelProyecto(ref) {
 const ref = process.env.DEMO_PROJECT_REF;
 let url = process.env.DEMO_SUPABASE_URL;
 let key = process.env.DEMO_SUPABASE_KEY;
-const password = process.env.DEMO_PASSWORD;
+const password = process.env.DEMO_PASSWORD?.trim().replace(/^<(.*)>$/, "$1");
 const count = Number(process.env.DEMO_COUNT ?? 4);
 
 if (ref && !key) {
@@ -81,18 +81,34 @@ if (!/^[ -~]+$/.test(key)) {
  * tienen por que compartirla, y obligar a igualarlas solo para poder sembrar seria pedir
  * que se debilite el entorno para comodidad de una herramienta.
  */
+/*
+ * Los marcadores de posicion se pegan enteros mas a menudo de lo que parece: si el valor
+ * viene envuelto en < >, casi seguro es eso y no una contrasena que empieza y termina en
+ * signos de comparacion. Se limpia y se avisa, en vez de dejar que el servicio conteste
+ * «Invalid login credentials» y perder cinco minutos buscando en el sitio equivocado.
+ */
+function limpiarClave(valor, nombre) {
+  if (!valor) return valor;
+  const podado = valor.trim();
+  if (podado.startsWith("<") && podado.endsWith(">")) {
+    console.warn(`   aviso: ${nombre} venia entre < >; se usa el contenido sin los signos.`);
+    return podado.slice(1, -1);
+  }
+  return podado;
+}
+
 const CUENTAS = {
   aliado: {
     email: process.env.DEMO_ALLY ?? "aliado@rutasolidaria.local",
-    password: process.env.DEMO_ALLY_PASSWORD ?? password,
+    password: limpiarClave(process.env.DEMO_ALLY_PASSWORD, "DEMO_ALLY_PASSWORD") ?? password,
   },
   admin: {
     email: process.env.DEMO_ADMIN ?? "admin@rutasolidaria.local",
-    password: process.env.DEMO_ADMIN_PASSWORD ?? password,
+    password: limpiarClave(process.env.DEMO_ADMIN_PASSWORD, "DEMO_ADMIN_PASSWORD") ?? password,
   },
   bodega: {
     email: process.env.DEMO_WAREHOUSE ?? "bodega@rutasolidaria.local",
-    password: process.env.DEMO_WAREHOUSE_PASSWORD ?? password,
+    password: limpiarClave(process.env.DEMO_WAREHOUSE_PASSWORD, "DEMO_WAREHOUSE_PASSWORD") ?? password,
   },
 };
 
