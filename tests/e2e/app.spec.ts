@@ -291,6 +291,26 @@ test("aporte guiado conserva pasos y genera ticket con QR", async ({ page }) => 
   await expect(page.getByText(/La fotografía quedó vinculada.*privada/)).toBeVisible();
 });
 
+test("verificación puede mirar la evidencia antes de decidir sobre el aporte", async ({ page }) => {
+  /*
+   * G-046: el aporte anterior dejó una fotografía cargada. Quien verifica tiene que poder
+   * abrirla —antes veía «1 cargada» y ninguna forma de mirarla— y la imagen tiene que
+   * cargarse de verdad, no solo aparecer el elemento: eso es lo que prueba que la URL
+   * firmada contra un bucket privado funciona.
+   */
+  await entrarComo(page, "admin@rutasolidaria.local");
+  const boton = page.getByRole("button", { name: /Ver evidencia/ }).first();
+  await expect(boton).toBeVisible({ timeout: 30000 });
+  await boton.click();
+
+  const imagen = page.getByRole("img", { name: /Soporte 1 del aporte/ }).first();
+  await expect(imagen).toBeVisible({ timeout: 30000 });
+  await expect
+    .poll(async () => imagen.evaluate((el) => (el as HTMLImageElement).naturalWidth), { timeout: 30000 })
+    .toBeGreaterThan(0);
+  await expect(page.getByText(/Los enlaces caducan en dos minutos/)).toBeVisible();
+});
+
 test("AYUDAR abre el aporte contra la necesidad y admite una parte de lo que falta", async ({ page }) => {
   await page.goto("/");
   // El primer «Quiero ayudar» de la portada es la llamada general del encabezado y

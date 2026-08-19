@@ -77,6 +77,25 @@ export function WarehouseConsole({
   const [receptionQuery, setReceptionQuery] = useState("");
   const usableLots = lotPositions.filter((lot) => ["available", "reserved"].includes(lot.status) && lot.quantity_available > 0);
   const [selectedLotId, setSelectedLotId] = useState(() => usableLots[0]?.lot_id ?? "");
+  /*
+   * Puente entre «tengo este lote» y «lo mando a otra bodega». Antes no existía: si el
+   * lote no cuadraba con ninguna necesidad, la única acción de la pantalla quedaba
+   * deshabilitada y desde ahí no había camino hacia el traslado, que es la operación que
+   * de verdad se quería hacer. Sembrar el formulario evita además reescribir a mano la
+   * categoría y la unidad, que tienen que coincidir exactamente con las del lote.
+   */
+  const [transferSeed, setTransferSeed] = useState<{ origin: string; category: string; unit: string; quantity: string } | null>(null);
+
+  function moverLoteAOtraBodega() {
+    if (!selectedLot) return;
+    setTransferSeed({
+      origin: selectedLot.location_id,
+      category: selectedLot.category,
+      unit: selectedLot.unit,
+      quantity: String(selectedLot.quantity_available),
+    });
+    document.getElementById("traslados")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const supabase = useMemo(() => createClient(), []);
   const normalizedQuery = receptionQuery.trim().toLocaleLowerCase("es");
   const visiblePromiseItems = promiseItems.filter((item) => !normalizedQuery || [
@@ -304,24 +323,48 @@ export function WarehouseConsole({
               <select id="need" name="need" key={selectedLotId} required disabled={!compatibleNeedItems.length}>
                 {compatibleNeedItems.map((need) => <option key={need.id} value={need.id}>{need.need_cases?.public_location_text} · faltan {numberFormat.format(Number(need.quantity_required) - Number(need.quantity_covered))} {need.unit}</option>)}
               </select>
-              {!compatibleNeedItems.length && <small>Elige otro lote o espera una necesidad con la misma categoría y unidad.</small>}
+              {!compatibleNeedItems.length && <small>Ninguna necesidad publicada pide {selectedLot?.category ?? "esta categoría"} en {selectedLot?.unit ?? "esta unidad"}.</small>}
             </div>
             <div className="field"><label htmlFor="allocation-quantity">Cantidad a reservar</label><input id="allocation-quantity" name="quantity" type="number" min="0.001" max={selectedLot?.quantity_available} step="0.001" required /><small>No puede superar lo disponible: {numberFormat.format(selectedLot?.quantity_available ?? 0)} {selectedLot?.unit}</small></div>
             <button className="button button-dark button-block" disabled={pending === "allocate" || !selectedLot || !compatibleNeedItems.length}>Reservar con control de concurrencia</button>
           </form>
+          {/*
+            Reservar contra una necesidad no es la única salida de un lote, y era la única
+            que esta pantalla ofrecía. Lo que va a otra bodega se reserva al autorizar el
+            traslado —quien pide no autoriza—, así que aquí se lleva a la operación
+            correcta en vez de dejar un botón deshabilitado sin explicación ni salida.
+          */}
+          {selectedLot && !compatibleNeedItems.length && (
+            <div className="lot-alternative">
+              <p>
+                Lo que va a otra bodega no se reserva aquí: se reserva cuando la
+                administración autoriza el traslado, para que nadie mueva existencia sin un
+                segundo par de ojos.
+              </p>
+              <button className="button button-outline button-small" type="button" onClick={moverLoteAOtraBodega}>
+                <ArrowLeftRight size={15} /> Trasladar este lote a otra bodega
+              </button>
+            </div>
+          )}
         </section>
       </div>
 
       <section className="ops-panel" id="traslados">
         <header className="ops-panel-header"><div><h2><ArrowLeftRight size={18} /> Traslados entre bodegas</h2><p>Una bodega pide, otra autoriza. La autorización reserva antes de que nada salga.</p></div><span>{openTransfers.length} por revisar</span></header>
-        <form className="inline-form" onSubmit={(event) => { event.preventDefault(); void requestTransfer(event.currentTarget); }}>
-          <label><span>Sale de</span><select name="origin" required>{locations.filter((location) => location.dispatches_shipments).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
+        {/*
+          Rejilla propia y no `inline-form`: aquella fija cuatro columnas para
+          formularios de cuatro campos, y este tiene seis. Los repartía en filas con
+          anchos que no les corresponden y truncaba «Centro de acopio Norte» a
+          «Centro de».
+        */}
+        <form className="transfer-form" key={transferSeed ? `${transferSeed.origin}-${transferSeed.category}-${transferSeed.unit}` : "vacio"} onSubmit={(event) => { event.preventDefault(); void requestTransfer(event.currentTarget); }}>
+          <label><span>Sale de</span><select name="origin" required defaultValue={transferSeed?.origin}>{locations.filter((location) => location.dispatches_shipments).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
           <label><span>Llega a</span><select name="destination" required>{locations.filter((location) => location.accepts_donations).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
-          <label><span>Categoría</span><input name="category" maxLength={80} required placeholder="Ej. Agua" /></label>
-          <label><span>Unidad</span><input name="unit" maxLength={40} required placeholder="Ej. litro" /></label>
-          <label><span>Cantidad</span><input name="quantity" type="number" min="0.001" step="0.001" required /></label>
-          <label><span>Justificación</span><input name="justification" minLength={10} maxLength={500} required placeholder="Por qué se necesita" /></label>
-          <button className="action-button approve" disabled={pending === "transfer-request"}>Solicitar traslado</button>
+          <label><span>Categoría</span><input name="category" maxLength={80} required placeholder="Ej. Agua" defaultValue={transferSeed?.category} /></label>
+          <label><span>Unidad</span><input name="unit" maxLength={40} required placeholder="Ej. litro" defaultValue={transferSeed?.unit} /></label>
+          <label><span>Cantidad</span><input name="quantity" type="number" min="0.001" step="0.001" required defaultValue={transferSeed?.quantity} /></label>
+          <label className="transfer-form-wide"><span>Justificación</span><input name="justification" minLength={10} maxLength={500} required placeholder="Por qué se necesita en la bodega de destino" /></label>
+          <button className="action-button approve transfer-form-submit" disabled={pending === "transfer-request"}>Solicitar traslado</button>
         </form>
         <div className="ops-list">
           {openTransfers.map((request) => (

@@ -45,4 +45,13 @@ describe("política de seguridad de contenido", () => {
     expect(contentSecurityPolicy("n", { development: true })).not.toContain("upgrade-insecure-requests");
     expect(policy()).toContain("upgrade-insecure-requests");
   });
+
+  it("permite mostrar la evidencia firmada del almacenamiento de Supabase", () => {
+    // Sin este origen la política bloquea la imagen en silencio y quien verifica un aporte
+    // ve un hueco donde debería estar el soporte. Es un fallo que no da error visible.
+    const politica = contentSecurityPolicy("nonce-de-prueba");
+    const imgSrc = politica.split(";").map((parte) => parte.trim()).find((parte) => parte.startsWith("img-src"));
+    expect(imgSrc).toBeDefined();
+    expect(imgSrc).toContain(new URL(process.env.NEXT_PUBLIC_SUPABASE_URL as string).origin);
+  });
 });

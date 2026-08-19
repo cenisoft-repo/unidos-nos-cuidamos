@@ -917,3 +917,27 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .param-verification-note { margin: 0; padding: 16px 20px 4px; }
 .param-verification-note input { min-height: 44px; padding: 0 11px; border: 1px solid #9caea6; border-radius: var(--radius-xs); background: var(--white); font-size: 15px; }
 .param-verification-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Revisión de evidencia fotográfica en la cola de verificación. La imagen se limita en
+   altura para que un soporte vertical no empuje el resto de la ficha fuera de la vista. */
+.evidence-review { margin: 12px 0 4px; }
+.evidence-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.evidence-grid figure { margin: 0; display: grid; gap: 5px; }
+.evidence-grid img { width: 100%; max-height: 240px; object-fit: cover; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
+.evidence-grid figcaption { color: var(--muted); font-size: 10px; }
+.evidence-note { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+
+/* Traslados entre bodegas. Rejilla propia porque `inline-form` fija cuatro columnas para
+   formularios de cuatro campos: con seis, repartía los anchos en el orden equivocado y
+   truncaba los nombres de los centros a «Centro de». */
+.transfer-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); align-items: end; gap: 10px; margin-top: 14px; }
+.transfer-form label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.transfer-form input, .transfer-form select { min-width: 0; width: 100%; height: 38px; padding: 5px 9px; border: 1px solid #aebcb5; border-radius: var(--radius-xs); background: var(--white); font-size: 12px; }
+.transfer-form-wide { grid-column: 1 / -1; }
+.transfer-form-submit { grid-column: 1 / -1; justify-self: start; min-height: 40px; padding: 0 18px; }
+.lot-alternative { display: grid; gap: 9px; justify-items: start; margin: 4px 20px 18px; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
+.lot-alternative p { margin: 0; color: var(--muted-strong); font-size: 12px; line-height: 1.55; }
+@media (max-width: 560px) {
+  .transfer-form { grid-template-columns: 1fr; }
+  .transfer-form-submit { justify-self: stretch; }
+}

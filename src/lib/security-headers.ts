@@ -43,7 +43,10 @@ export function contentSecurityPolicy(nonce: string, { development = false } = {
     `script-src ${script.join(" ")}`,
     // React y las librerías de mapas escriben estilos en línea.
     "style-src 'self' 'unsafe-inline'",
-    `img-src ${unique(["'self'", "data:", "blob:", mapStyle, rasterTiles]).join(" ")}`,
+    // La evidencia fotográfica se sirve con una URL firmada del almacenamiento de
+    // Supabase, así que ese origen tiene que estar aquí: sin él la política bloquea la
+    // imagen en silencio y quien verifica ve un hueco donde debería estar el soporte.
+    `img-src ${unique(["'self'", "data:", "blob:", supabase, mapStyle, rasterTiles]).join(" ")}`,
     `font-src ${unique(["'self'", "data:", mapStyle]).join(" ")}`,
     `connect-src ${unique(["'self'", supabase, supabaseSocket, mapStyle, rasterTiles, geocoder]).join(" ")}`,
     // MapLibre crea sus trabajadores desde blobs.
