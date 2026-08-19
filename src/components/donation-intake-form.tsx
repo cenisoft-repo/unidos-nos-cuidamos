@@ -24,7 +24,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toOperationalMessage } from "@/lib/user-errors";
 import { EVENT_ID } from "@/lib/constants";
 import type { DonationCategoryOption, DonationFlowCatalogs } from "@/lib/donation-catalogs";
-import type { PublicCollectionCenter } from "@/lib/public-types";
+import { toPublicCollectionCenter, type PublicCollectionCenter, type PublicCollectionCenterRow } from "@/lib/public-types";
 import { sha256Hex, validateIntakePhotos } from "@/lib/intake-photo-evidence";
 import { CategoryIcon } from "./category-icon";
 
@@ -194,6 +194,10 @@ export function DonationIntakeForm({
     internalContact: "",
     observations: "",
   });
+  // Fase 6: la lista de puntos se reordena por cercanía solo si la persona comparte su ubicación.
+  const [nearbyCenters, setNearbyCenters] = useState<PublicCollectionCenter[] | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationNotice, setLocationNotice] = useState("");
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -223,6 +227,43 @@ export function DonationIntakeForm({
 
   function categoryByCode(categoryCode: string) {
     return inKindCategories.find((category) => category.value === categoryCode);
+  }
+
+  const visibleCenters = nearbyCenters ?? centers;
+
+  function locateNearestCenters() {
+    if (!navigator.geolocation) {
+      setLocationNotice("Este navegador no puede compartir tu ubicación. Elige el punto manualmente.");
+      return;
+    }
+    setLocating(true);
+    setLocationNotice("");
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const supabase = createClient();
+        const { data, error: nearError } = await supabase.rpc("organization_delivery_points_near", {
+          p_event_id: EVENT_ID,
+          p_organization_id: organizationId,
+          p_latitude: position.coords.latitude,
+          p_longitude: position.coords.longitude,
+        });
+        setLocating(false);
+        if (nearError || !data) {
+          setLocationNotice("No pudimos calcular la cercanía. Elige el punto manualmente.");
+          return;
+        }
+        const ordered = (data as PublicCollectionCenterRow[]).map(toPublicCollectionCenter);
+        setNearbyCenters(ordered);
+        const recommended = ordered.find((center) => centerAcceptsItems(center));
+        if (recommended) setPreferredLocationId(recommended.id);
+        setLocationNotice(recommended ? `Punto recomendado: ${recommended.name}.` : "Ningún punto cercano recibe este aporte.");
+      },
+      () => {
+        setLocating(false);
+        setLocationNotice("No compartiste tu ubicación. Elige el punto manualmente.");
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+    );
   }
 
   function centerAcceptsItems(center: PublicCollectionCenter) {
@@ -527,7 +568,11 @@ export function DonationIntakeForm({
           <section aria-labelledby="donation-step-title-entrega">
             <h3 id="donation-step-title-entrega">¿Dónde lo entregas?</h3>
             <p className="step-help">Solo aparecen los puntos de tu organización que pueden recibir este aporte. El destino final se define después de la verificación.</p>
-            {centers.length ? <div className="donation-center-options">{centers.map((center) => { const isCompatible = centerAcceptsItems(center); return <button className={preferredLocationId === center.id ? "is-selected" : ""} type="button" aria-pressed={preferredLocationId === center.id} disabled={!isCompatible} onClick={() => { setPreferredLocationId(center.id); setStepError(""); }} key={center.id}><span className="center-map-icon"><MapPin size={20} /></span><span><strong>{center.name}</strong><small>{center.locationLabel}</small><em>{isCompatible ? `Recibe ${center.accepts.join(", ")}${center.instructions ? ` · ${center.instructions}` : ""}` : "No compatible con este aporte"}</em></span>{preferredLocationId === center.id && <CheckCircle2 size={20} />}</button>; })}</div> : <div className="form-error" role="status">Tu organización aún no tiene un punto de entrega activo. Pide a la administración que lo configure antes de reportar bienes.</div>}
+            <div className="center-proximity">
+              <button className="button button-outline button-small" type="button" onClick={locateNearestCenters} disabled={locating}><MapPin size={14} /> {locating ? "Buscando el más cercano…" : "Ordenar por cercanía"}</button>
+              {locationNotice && <small role="status">{locationNotice}</small>}
+            </div>
+            {visibleCenters.length ? <div className="donation-center-options">{visibleCenters.map((center) => { const isCompatible = centerAcceptsItems(center); return <button className={preferredLocationId === center.id ? "is-selected" : ""} type="button" aria-pressed={preferredLocationId === center.id} disabled={!isCompatible} onClick={() => { setPreferredLocationId(center.id); setStepError(""); }} key={center.id}><span className="center-map-icon"><MapPin size={20} /></span><span><strong>{center.name}</strong><small>{center.locationLabel}</small><em>{isCompatible ? `Recibe ${center.accepts.join(", ")}${center.distanceKm === null ? "" : ` · a ${center.distanceKm} km`}${center.instructions ? ` · ${center.instructions}` : ""}` : "No compatible con este aporte"}</em></span>{preferredLocationId === center.id && <CheckCircle2 size={20} />}</button>; })}</div> : <div className="form-error" role="status">Tu organización aún no tiene un punto de entrega activo. Pide a la administración que lo configure antes de reportar bienes.</div>}
             <OptionalBlock label="Destino previsto y alcance" hint="Opcional" defaultOpen={hasDestinationData}>{destinationFields}</OptionalBlock>
           </section>
         )}

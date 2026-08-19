@@ -320,6 +320,8 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .donation-step-body > section { flex: 1; }
 .donation-step-body > section > h3 { font-size: 24px; }
 .step-help { margin-bottom: 24px; color: var(--muted); font-size: 13px; }
+.center-proximity { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.center-proximity small { color: var(--muted); font-size: 11px; }
 .need-help-banner { display: flex; gap: 13px; align-items: flex-start; margin-bottom: 18px; padding: 15px 17px; border: 1px solid var(--forest-2); border-radius: var(--radius-md); background: var(--mint); }
 .need-help-banner svg { flex: none; color: var(--forest-2); }
 .need-help-banner div { display: flex; flex-direction: column; gap: 3px; }
@@ -548,6 +550,14 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .delivery-purpose-fieldset > .form-check:last-of-type { margin-bottom: 2px; }
 .delivery-category-fieldset { margin: 15px 0 4px; padding: 0; border: 0; }
 .delivery-category-fieldset legend { margin-bottom: 8px; font-size: 12px; font-weight: 800; }
+.report-grid { display: grid; gap: 16px; }
+.report-panel { min-width: 0; }
+.report-scroll { overflow-x: auto; padding: 0 20px 18px; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.report-table th { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; white-space: nowrap; }
+.report-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.report-table td small { display: block; color: var(--muted); font-size: 10px; }
+.report-table tbody tr:last-child td { border-bottom: 0; }
 .lot-position { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 14px 20px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
 .lot-position div { display: grid; gap: 2px; min-width: 0; }
 .lot-position dt { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
