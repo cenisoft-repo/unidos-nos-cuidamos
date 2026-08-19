@@ -233,6 +233,7 @@ declare
   legacy_status text;
   legacy_donor_type text;
   legacy_context jsonb;
+  reporting_ally text;
   legacy_items jsonb := '[]'::jsonb;
   acceptance_decision text;
   need_case public.need_cases;
@@ -300,6 +301,31 @@ begin
       and department.value = context ->> 'destination_department'
   ) then
     raise exception using errcode = '22023', message = 'Selecciona un departamento vigente';
+  end if;
+
+  -- El envoltorio de `202608160003` validaba el aliado de referencia y el tenant del punto
+  -- antes de delegar. Esta funcion lo sustituyo por completo, asi que esas reglas se
+  -- reincorporan aqui: sin ellas G-022 (P0) queda abierta y el aliado de referencia deja de
+  -- comprobarse contra el catalogo vigente.
+  reporting_ally := nullif(btrim(context ->> 'reporting_ally'), '');
+  if reporting_ally is not null and not exists (
+    select 1
+    from public.donation_flow_catalogs() as catalog,
+      jsonb_array_elements(catalog.values_json) as option(value)
+    where catalog.key = 'reporting_allies'
+      and option.value ->> 'value' = reporting_ally
+  ) then
+    raise exception using errcode = '22023', message = 'Selecciona un aliado de referencia vigente';
+  end if;
+  if reporting_ally = 'otro' and char_length(btrim(coalesce(context ->> 'observations', ''))) < 3 then
+    raise exception using errcode = '22023', message = 'Especifica el otro aliado en Observaciones';
+  end if;
+  if p_kind = 'in_kind' then
+    perform public.assert_delivery_point_tenant(
+      p_preferred_location_id,
+      p_event_id,
+      p_organization_id
+    );
   end if;
 
   if p_kind = 'money' then
@@ -517,7 +543,8 @@ begin
       declared_category_code = p_declared_category_code,
       catalog_versions = p_catalog_versions,
       catalog_fingerprint = canonical_fingerprint,
-      need_case_id = p_need_case_id
+      need_case_id = p_need_case_id,
+      reporting_ally_code = reporting_ally
   where id = submitted.intake_id;
 
   if p_kind = 'in_kind' then

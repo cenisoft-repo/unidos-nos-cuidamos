@@ -222,6 +222,7 @@ select throws_ok(
     '70000000-0000-0000-0000-000000000002',
     '{"specific_destination":false}'::jsonb,
     public.current_donation_catalog_versions(),
+    null,
     null
   )$$,
   '22023',

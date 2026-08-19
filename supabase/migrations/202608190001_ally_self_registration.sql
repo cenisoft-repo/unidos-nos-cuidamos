@@ -360,7 +360,10 @@ begin
 
   insert into public.memberships(user_id, organization_id, event_id, role, active)
   values (actor_id, created_org.id, registration.event_id, 'partner_reporter', true)
-  on conflict (user_id, organization_id, event_id, role) do update set active = true;
+  -- `organization_id` tambien es columna de la tabla que devuelve esta funcion, asi que
+  -- inferir el conflicto por nombre de columna es ambiguo (42702). Se nombra la restriccion.
+  on conflict on constraint memberships_user_id_organization_id_event_id_role_key
+  do update set active = true;
 
   -- La operación administra el punto del aliado igual que administra los suyos: sin estas
   -- membresías, lo que el aliado entrega quedaría almacenado y sin nadie que pueda moverlo.
@@ -370,7 +373,7 @@ begin
   where existing.event_id = registration.event_id
     and existing.active
     and existing.role in ('event_admin','warehouse_operator','logistics_operator')
-  on conflict (user_id, organization_id, event_id, role) do nothing;
+  on conflict on constraint memberships_user_id_organization_id_event_id_role_key do nothing;
 
   -- El punto nace habilitado para recibir y para entregar a la operación: si solo recibiera,
   -- lo entregado allí no podría continuar la cadena.

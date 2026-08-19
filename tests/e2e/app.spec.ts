@@ -263,7 +263,10 @@ test("aporte guiado conserva pasos y genera ticket con QR", async ({ page }) => 
 
 test("AYUDAR abre el aporte contra la necesidad y admite una parte de lo que falta", async ({ page }) => {
   await page.goto("/");
-  const helpLink = page.getByRole("link", { name: /Quiero ayudar/ }).first();
+  // El primer «Quiero ayudar» de la portada es la llamada general del encabezado y
+  // apunta a `/donar` a secas; el que abre el aporte contra una necesidad concreta es
+  // el de la ficha, así que la comprobación se ancla al catálogo de necesidades.
+  const helpLink = page.locator(".need-card").getByRole("link", { name: /Quiero ayudar/ }).first();
   await expect(helpLink).toHaveAttribute("href", /\/donar\?necesidad=/);
   await expect(page.getByText(/Solicitado .* comprometido .* entregado/).first()).toBeVisible();
 
@@ -271,7 +274,11 @@ test("AYUDAR abre el aporte contra la necesidad y admite una parte de lo que fal
   await page.getByLabel("Correo").fill("aliado@rutasolidaria.local");
   await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
   await page.getByRole("button", { name: "Ingresar", exact: true }).click();
-  await expect(page).toHaveURL(/\/donar$/);
+  // `toHaveURL(/\/donar$/)` no sirve como espera aqui: la URL de partida es
+  // `/ingresar?next=/donar` y tambien termina en «/donar», asi que la asercion pasaba
+  // antes de que la accion de servidor escribiera la cookie de sesion y la navegacion
+  // siguiente llegaba sin sesion. Se espera a que el formulario autenticado este en pie.
+  await expect(page.getByText("Paso 1 de 4")).toBeVisible();
 
   await page.goto("/donar?necesidad=62000000-0000-0000-0000-000000000001");
   await expect(page.getByText(/Estás ayudando a la necesidad NEC-/)).toBeVisible();
