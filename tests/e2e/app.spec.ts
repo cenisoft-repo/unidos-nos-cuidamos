@@ -483,8 +483,11 @@ test("SUPER_ADMIN administra roles, catálogos y ve quién cambió qué", async 
 
   // 2. G-039: la consola distingue confirmar un correo de verificar una organización.
   await page.getByRole("tab", { name: "Organizaciones" }).click();
+  // Una organización sobre la que nadie ha decidido nada no figura como verificada.
+  // Se lee en una que la prueba no toca, para que el chequeo no dependa de si esta
+  // suite ya corrió antes contra la misma base (web y móvil comparten el sandbox).
+  await expect(page.getByRole("row", { name: /Red Humanitaria Demo/ })).toContainText("Sin comprobar");
   const filaAliada = page.getByRole("row", { name: /Aliados Unidos Demo/ });
-  await expect(filaAliada).toContainText("Sin comprobar");
   await page.getByLabel("Sustento de la decisión").fill("Cámara de comercio y RUT revisados en el ejercicio");
   await filaAliada.getByRole("button", { name: "Verificar" }).click();
   await expect(page.getByRole("status")).toContainText("Verificación registrada", { timeout: 15000 });

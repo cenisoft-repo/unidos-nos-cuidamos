@@ -69,3 +69,35 @@ Decisión: modelar Centro A → Centro B con `transfer_requests` y las piezas qu
 Motivo: el eje bodega a bodega no existía —`transfer_in`/`transfer_out` estaban declarados y sin usar— y construirlo aparte habría creado una segunda forma de mover inventario.
 
 Consecuencia: `allocations.need_item_id` pasa a ser opcional y excluyente con `transfer_request_id`. `validate_delivery` rechaza los traslados: un movimiento entre bodegas no publica impacto ni cubre una necesidad, se cierra con la confirmación del destino.
+
+## ADR-010 · 2026-08-18 · SUPER_ADMIN es alcance, no un segundo RBAC
+
+Decisión: `super_admin` es un valor más de `app_role` y se concede con una fila en `memberships`, igual que cualquier otro rol. Su autoridad global no vive en una tabla nueva ni en un claim del token: vive en las cuatro funciones de compuerta que ya usaban todas las políticas y todas las RPC (`is_org_member`, `has_any_role`, `has_event_role`, `has_location_scope`), cada una con su regla original más `or is_super_admin()`.
+
+Motivo: crear un segundo sistema de permisos habría duplicado la superficie que hay que auditar y habría abierto la puerta a que las dos discreparan. Extender las compuertas mantiene una sola respuesta a «¿puede esta persona?», que es la de PostgreSQL.
+
+Consecuencia: SUPER_ADMIN no es un bypass. RLS sigue habilitada, el inventario sigue sin política de escritura directa y ninguna RPC de operación tiene una rama especial: si la autoridad global modifica existencias, lo hace con el mismo movimiento, el mismo Kardex y la misma auditoría que cualquiera. La organización y el evento de su fila de membresía no acotan nada; están porque las columnas son obligatorias.
+
+## ADR-011 · 2026-08-18 · La autoridad global no se concede desde la aplicación
+
+Decisión: `assign_membership_role` rechaza el rol `super_admin` y rechaza actuar sobre uno mismo. Conceder o revocar autoridad global solo es posible con `grant_super_admin` / `revoke_super_admin`, revocadas para `anon` y `authenticated`, alcanzables únicamente con `service_role` y obligadas a registrar un motivo.
+
+Motivo: una consola que reparte el permiso más alto es un único punto de compromiso. Y una consola donde alguien puede editar su propia membresía deja de ser auditable frente a quien la usa.
+
+Consecuencia: incorporar una autoridad global en producción es una operación fuera de banda, con credencial de servicio y su registro en `audit_events`. Hay que preverlo en el runbook de despliegue; no es un olvido.
+
+## ADR-012 · 2026-08-18 · La parametrización edita datos, nunca contratos
+
+Decisión: el módulo de parametrización solo alcanza estructura operativa (puntos, con la RPC que ya existía), organizaciones, alcance de cuentas y una lista blanca explícita de catálogos. Quedan fuera los catálogos que sostienen invariantes —los estados declarados alimentan el mapeo a estados operativos dentro de la RPC de aporte, y los departamentos son referencia DIVIPOLA— además de toda regla de RLS, autorización, transición de despacho, tipo del Kardex, fórmula de disponibilidad y regla de concurrencia.
+
+Motivo: parametrizar una regla es convertir un contrato en un dato editable desde una pantalla, y un contrato editable deja de poder probarse.
+
+Consecuencia: publicar un catálogo crea una versión nueva y cierra la anterior; los aportes ya registrados conservan la versión con la que se validaron. Un elemento con historial se desactiva, no se borra.
+
+## ADR-013 · 2026-08-18 · Confirmar un correo no verifica una organización
+
+Decisión: `organization_verifications.state` distingue `email_verified` (el buzón responde) de `document_pending` y `verified` (revisión documental). El autorregistro solo puede llegar a `email_verified`; subir de ahí exige `decide_organization_verification`, con actor y sustento. `organizations.verified` conserva su significado —habilitada para operar— y no se confunde con el nivel de comprobación.
+
+Motivo: escribir `verified` por haber confirmado un correo hacía indistinguible una organización comprobada de una que solo abrió un buzón, y esa distinción es exactamente la que una plataforma humanitaria necesita antes de aceptar aportes a nombre de terceros.
+
+Consecuencia: la verificación documental en sí no se implementa aquí; depende de la política de aceptación (`G-003`). Lo que existe es el sitio correcto donde escribirla cuando esa política llegue.

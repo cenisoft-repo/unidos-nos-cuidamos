@@ -1,16 +1,53 @@
 # Estado actual
 
 - Puerta/hito: G1 publicada como sandbox sintético interno; G2/G3 bloqueadas y no deben incorporarse operadores/PII antes de verificar en remoto el cierre local de `G-022`.
-- Último resultado comprobado en esta línea: **`npm run verify` verde de extremo a extremo** con 28 migraciones — preflight, lint, typecheck, 39/39 unitarias, 218/218 pgTAP, RLS, concurrencia, build y 30/30 Playwright web/móvil. **Ese resultado es anterior al merge**: la rama de integración suma seis migraciones y aún no ha corrido `verify` completa (`G-038`).
-- **Remoto al día: 28 migraciones, sincronizado con local (despliegue 2026-08-17).** Esta línea decía «el remoto conserva 15 migraciones» y era falsa: el remoto ya tenía 26 antes de este despliegue. Ese dato desactualizado hizo creer que `G-030` no había llegado a producción, cuando sí estaba viva allí. Comprobar contra `supabase migration list --linked`, no contra esta memoria.
+- Último resultado comprobado: **`npm run verify` verde de extremo a extremo** sobre `integration/superadmin-consolidacion` con **38 migraciones** — preflight, lint, typecheck, 47/47 unitarias, 359/359 pgTAP en cinco archivos, RLS (anonimato, tenant, escalamiento y alcance global), dos pruebas de concurrencia (aporte y reserva), build y 44/44 Playwright web/móvil. Además `audit:a11y` sin problemas en 14 superficies y `audit:visual` con 70 mediciones y cero desbordes.
+- **Remoto: 28 migraciones (hasta `202608170007`). Las diez de esta línea NO están aplicadas allí.** Comprobar siempre contra `supabase migration list --linked`, no contra esta memoria: ya hubo una vez en que este dato estaba vencido y se creyó que `G-030` no había llegado a producción cuando sí estaba viva.
 - Recorrido activo local/remoto: portal, reportes, aportes en especie/dinero con catálogos versionados y centro compatible, QR de seguimiento, operación, tesorería, mapas, dashboards y exportaciones con datos sintéticos. El registro de aporte usa un recorrido adaptativo de cuatro pasos en especie y tres en dinero.
-- Hallazgos: A15-001 a A15-008 cerrados para G1. Cerradas también `G-021`, `G-023`, `G-024`, `G-025` (`202608170003/004/005`), `G-028`, `G-029`, `G-032`, `G-033` y `G-030` (esta última **globalmente**, verificada en producción). `G-022` tiene su migración aplicada en remoto; solo falta repetir allí el arnés de simulación. En la pista visual: `DQ-01`, `DQ-04` y `DQ-05` cerradas; `DQ-06` mitigada. **Abiertas:** `G-031` P2 (tensión de tenant), `G-026/G-027` P2, `G-015` P2 (WAF remoto), `G-017` P2 y `G-001` a `G-008` P2 (decisiones humanas). Integradas desde `claude/new-session-tflf63` y **sin ejecutar contra base de datos**: `G-034` a `G-037`; abiertas `G-038` (ejecutar la suite) y `G-039` (verificación documental de organización). `docs/GAP_LEDGER.md` y `docs/ai/DESIGN_QUALITY.md` son la fuente.
-- Próxima acción exacta: ejecutar `npm run verify` con Docker sobre `integration/superadmin-consolidacion` para validar las seis migraciones integradas, las pgTAP nuevas, el recorrido completo, RLS, concurrencia y Playwright (`G-038`). Después: `DQ-06` —acotar la lista de puntos en móvil; la métrica de cierre es la razón móvil/escritorio, hoy 14,9 contra 1,8 pantallas—, `S-01 Evidencias` (condicionada a `G-003`/`G-005`), y con decisión humana `G-031` (¿cada gremio habilita representante, o se admite entregar en punto de otra organización validando en recepción?), repetir el arnés remoto para cerrar `G-022` y rotar las credenciales expuestas.
+- Hallazgos: A15-001 a A15-008 cerrados para G1. Cerradas `G-021`, `G-023`, `G-024`, `G-025`, `G-028`, `G-029`, `G-030` (globalmente, verificada en producción), `G-032`, `G-033`, y en esta sesión `G-034` a `G-038` (las de la consolidación, ya ejecutadas), `G-040` (concurrencia de reserva), `G-041` (recepción con faltante) y `G-042` (SUPER_ADMIN y parametrización). `G-039` queda **cerrada solo en el modelo**: el autorregistro ya no escribe `verified`, pero la verificación documental depende de `G-003`. `G-022` tiene su migración aplicada en remoto; falta repetir allí el arnés. En la pista visual: `DQ-01`, `DQ-04` y `DQ-05` cerradas; `DQ-06` mitigada. **Abiertas:** `G-031` P2 (tensión de tenant), `G-026/G-027` P2, `G-043` P2 (antes/después solo en las tablas del parametrizador), `G-015` P2, `G-017` P2 y `G-001` a `G-008` P2 (decisiones humanas). `docs/GAP_LEDGER.md` y `docs/ai/DESIGN_QUALITY.md` son la fuente.
+- Próxima acción exacta: decidir con la persona responsable la ventana de aplicación en remoto de las diez migraciones pendientes —traen cambios de contrato que rompen llamadores viejos: `submit_donation_intake_v2` a diecisiete parámetros, `create_shipment` a siete, `register_delivery` a cinco, `shipments.carrier_name` retirada y `auth.enable_signup` abierta con confirmación obligatoria— y repetir allí el arnés de simulación para cerrar `G-022` globalmente. En paralelo: `DQ-06` (razón móvil/escritorio, hoy 14,9 contra 1,8 pantallas), `S-01 Evidencias` (condicionada a `G-003`/`G-005`), `G-031` (¿cada gremio habilita representante, o se admite entregar en punto de otra organización validando en recepción?) y rotar las credenciales expuestas.
 - Bloqueos reales: operador, autoridad, DPIA, política de aceptación, proveedor real, WAF/monitoreo externo, backups remotos/PITR, HIBP, marcas y aprobación de piloto. El despliegue actual no autoriza datos reales, recaudo ni comunicación institucional.
 - Entorno local: `preflight:local` pasa. Los enlaces remotos se regeneraron para el despliegue del 2026-08-17 y **se retiraron al terminar** —mientras están puestos, `preflight:local` falla y bloquea `npm run verify`, que es su propósito—; respaldados en `.local-backups/enlaces-remotos/`, se regeneran con `vercel link` y `supabase link`. El `.env.local` sigue apuntando al entorno de **entrega**; para correr la suite hay que conmutar a suite según `docs/REMOTE_SETUP_RUNBOOK.md`.
 - Deuda documental conocida: `202608170007` lleva en su encabezado la frase «El remoto conserva 15 migraciones», falsa y ya aplicada en producción. No se edita: una migración aplicada es historia y este proyecto compensa en vez de reescribir. La corrección vive aquí, en `GAP_LEDGER.md` y en `STATUS.md`.
 
 ## Delta último ciclo
+
+### Integración + SUPER_ADMIN · 2026-08-18
+
+- **Merge de las dos líneas.** `entrega/despacho-trazabilidad-tesoreria` +
+  `origin/claude/new-session-tflf63` en `integration/superadmin-consolidacion`. Las dos
+  habían asignado en paralelo `G-028`…`G-033` a brechas distintas; se conservan las de la
+  primera y las de la segunda se corren a `G-034`…`G-039`, con la equivalencia anotada en la
+  cabecera de `GAP_LEDGER.md`. `verify-rls.mjs` quedó como una sola implementación que cubre
+  los escenarios de ambas, no como una concatenación.
+- **La consolidación nunca había corrido contra una base (`G-038`).** Ejecutarla destapó
+  cuatro defectos reales; el grave es que `submit_donation_intake_v2`, al reimplementarse como
+  función completa, perdió `assert_delivery_point_tenant` y con ello **reabría `G-022`, un P0**:
+  un aliado volvía a poder enrutar su aporte al punto de otra organización. Lección: una
+  migración que compila no es una migración que funciona, y un envoltorio que valida se pierde
+  en silencio cuando alguien reescribe la función que envolvía.
+- **SUPER_ADMIN es un valor más de `app_role` (`G-042`).** El alcance vive en las cuatro
+  compuertas existentes (`is_org_member`, `has_any_role`, `has_event_role`,
+  `has_location_scope`), cada una con su regla intacta más `or is_super_admin()`. Ninguna RPC
+  de operación cambió: mayor alcance, misma lógica de negocio. El inventario sigue sin política
+  de escritura directa y la prueba lo ejerce desde la API real.
+- **Nadie escala su propio rol.** Tres capas: `memberships` sin política de escritura,
+  `assign_membership_role` rechaza `super_admin` y rechaza actuar sobre uno mismo, y
+  `grant_super_admin` está revocada para `anon` y `authenticated`. El rol se lee de la tabla,
+  no de un claim.
+- **Parametrización sin duplicar arquitectura.** Puntos con `manage_delivery_point`, catálogos
+  con versiones `effective_from`/`effective_to`, alcance por bodega con `membership_locations`,
+  auditoría con `audit_events`. Lo único añadido fue el antes/después en la auditoría, activado
+  por tabla y excluyendo toda columna `_private` (`G-043` deja constancia del límite).
+- **`G-039`: el modelo ya no confunde correo con organización.** El autorregistro escribe
+  `email_verified`; llegar a `verified` exige `decide_organization_verification` con actor y
+  sustento. La verificación documental sigue siendo decisión humana.
+- **Dos garantías que nadie había ejercido (`G-040`, `G-041`).** Reserva concurrente 20+20
+  contra 25 disponibles, y recepción con faltante donde el historial conserva lo despachado.
+- **Limpieza:** se retira `submit_donation_intake_v2_catalogs_v1`, sin llamadores desde que la
+  Fase 4 sustituyó el envoltorio.
+- Evidencia: 359/359 pgTAP, RLS, dos concurrencias, 44/44 Playwright, a11y 0 problemas en 14
+  superficies, visual 70 mediciones sin desbordes.
 
 ### Pista visual 2026-08-17 · DQ-01 cerrado, el instrumento ya sirve de puerta
 
@@ -123,5 +160,5 @@
 ## Contexto que debe cargarse
 
 - Archivos: `AGENTS.md`, este archivo, `docs/UX_MAP.md` y `docs/ai/PLAN.md`.
-- Decisiones: ADR-001 a ADR-006 en `docs/DECISIONS.md`.
+- Decisiones: ADR-001 a ADR-013 en `docs/DECISIONS.md`. Las de este ciclo son ADR-010 a ADR-013: SUPER_ADMIN como alcance y no como segundo RBAC, la concesión fuera de banda, qué es parametrizable y por qué, y la separación entre correo confirmado y organización verificada.
 - Riesgos: `docs/RISK_REGISTER.md` y `docs/GAP_LEDGER.md`.

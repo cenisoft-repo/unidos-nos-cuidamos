@@ -4,46 +4,103 @@ Fecha: 2026-08-18 · Puerta: **G1**, sandbox con datos 100 % sintéticos.
 G2 y G3 siguen bloqueadas: no deben incorporarse operadores, PII, dinero ni
 comunicación institucional.
 
-## Consolidación integrada el 2026-08-18 · sin ejecución contra base de datos
-
-La rama `claude/new-session-tflf63` implementó las dieciocho fases del loop de
-consolidación de donaciones, inventario y logística y se integró aquí. Lo que
-esa línea pudo comprobar en su entorno: `eslint`, `tsc --noEmit`, `next build`,
-47/47 pruebas unitarias y la validación sintáctica de las migraciones y los
-archivos pgTAP con el analizador oficial de PostgreSQL.
-
-Lo que **no** se ejecutó allí y sigue pendiente tras el merge: pgTAP, RLS,
-concurrencia y Playwright sobre el conjunto integrado. Aquel entorno no pudo
-levantar Supabase local porque su política de egreso bloquea la descarga de las
-imágenes de contenedor. Hasta que `npm run verify` corra verde con Docker sobre
-la rama de integración (`G-038`), esa parte es código revisado y no verificado
-contra una base de datos.
-
-Cambios de contrato que exigen atención al aplicar: `submit_donation_intake_v2`
-pasa de dieciséis a diecisiete parámetros, `create_shipment` de cinco a siete,
-`register_delivery` de cuatro a cinco, `shipments.carrier_name` se retira y
-`auth.enable_signup` se abre con confirmación de correo obligatoria. Los cuatro
-llamadores de scripts y las pruebas SQL ya están actualizados.
+Esta línea es `integration/superadmin-consolidacion`: la entrega de despacho,
+trazabilidad y tesorería fusionada con la consolidación de logística, más
+SUPER_ADMIN y la parametrización. **Nada de esto está aplicado en remoto**, que
+conserva 28 migraciones (hasta `202608170007`).
 
 ## Lo verificado
 
-`npm run verify` pasa de extremo a extremo. Se ejecutó dos veces: la primera
-reprobó por `G-033` —la suite reutilizaba un servidor de desarrollo degradado— y
-la segunda, ya con el arnés aislado, salió verde completa:
+`npm run verify` pasa de extremo a extremo sobre las 38 migraciones integradas:
 
 | Comprobación | Resultado |
 |---|---|
 | `preflight:local` | ok · sin enlaces activos a proyectos remotos |
 | Lint · TypeScript · build | verdes |
-| Unitarias (Vitest) | 39/39 |
-| SQL (pgTAP) | 218/218 sobre 28 migraciones |
-| RLS (`verify-rls.mjs`) | ok · aislamiento de tenant y anonimato |
-| Concurrencia | ok · doble envío produce un solo aporte |
-| Playwright web + móvil | 30/30 · servidor propio y limpio (`G-033`) |
-| `audit:a11y` | **0 problemas** en 11 superficies · 3 indeterminados medidos a mano |
-| `audit:visual` | 55 mediciones · cero desbordes horizontales |
+| Unitarias (Vitest) | 47/47 |
+| SQL (pgTAP) | 359/359 sobre 38 migraciones, en cinco archivos |
+| RLS (`verify-rls.mjs`) | ok · anonimato, aislamiento de tenant, escalamiento bloqueado y alcance global |
+| Concurrencia de aporte | ok · doble envío produce un solo aporte |
+| Concurrencia de reserva | ok · 25 disponibles, dos reservas de 20 a la vez, una sola completa |
+| Playwright web + móvil | 44/44 · servidor propio y limpio (`G-033`) |
+| `audit:a11y` | **0 problemas** en 14 superficies · 3 indeterminados medidos a mano |
+| `audit:visual` | 70 mediciones · cero desbordes horizontales |
+
 
 ## Qué se cerró en este ciclo
+
+**`G-038` · P1 — la consolidación nunca había tocado una base de datos.** Las seis
+migraciones del 19 de agosto se escribieron y se validaron sintácticamente, pero
+ningún entorno pudo ejecutarlas. Al correrlas sobre el árbol fusionado aparecieron
+cuatro defectos reales, no hipotéticos:
+
+- `activate_ally_registration` abortaba con `42702` en la primera activación. La
+  función devuelve una tabla con la columna `organization_id`, así que ese nombre
+  también es una variable PL/pgSQL y sus dos `on conflict (user_id,
+  organization_id, ...)` eran ambiguos. Ningún aliado podía activarse, y con eso
+  38 de las 44 comprobaciones del recorrido completo ni siquiera llegaban a correr.
+- `submit_donation_intake_v2` había perdido la validación de tenant del punto de
+  entrega. La Fase 4 la reimplementó como función completa en lugar de conservar
+  el envoltorio de `202608160003`, y con él se fueron `assert_delivery_point_tenant`
+  —que es el cierre de `G-022`, un P0—, la validación del aliado de referencia y la
+  escritura de `reporting_ally_code`. **Un aliado volvía a poder enrutar su aporte
+  al punto de otra organización.**
+- Una prueba invocaba la RPC con dieciséis argumentos cuando la firma ya exigía
+  diecisiete: fallaba por «function does not exist», no por lo que pretendía probar.
+- La prueba de AYUDAR tomaba con `.first()` la llamada general del encabezado en vez
+  del enlace de la ficha, y esperaba con `toHaveURL(/\/donar$/)` —que la URL de
+  partida `/ingresar?next=/donar` ya satisface—, así que la navegación siguiente
+  salía sin sesión.
+
+Las seis migraciones no están aplicadas en ningún entorno, así que las dos primeras
+correcciones se hicieron sobre ellas en vez de añadir una migración de parche.
+
+**`G-040` y `G-041` · P1 — dos garantías que nadie había ejercido.** La reserva
+concurrente estaba escrita en la transacción (`select ... for update` sobre el lote
+y recálculo del disponible ya con el bloqueo puesto) pero no había prueba: ahora
+`verify-reservation-concurrency.mjs` monta 25 unidades por el recorrido real y lanza
+dos reservas de 20 a la vez contra la API; una sola completa, la otra recibe
+«Existencia insuficiente» y el Kardex cierra en 5. Y el traslado entre bodegas solo
+estaba probado cuando el destino confirma exactamente lo despachado: el caso con
+faltante, que es el que puede perder producto del historial, ahora tiene su
+comprobación —salen 5 kg, el destino confirma 3, el inventario crece en 3, la
+conciliación queda en NOVEDAD y los 2 kg siguen contados en lo despachado.
+
+**`G-042` · P1 — SUPER_ADMIN, sin un segundo sistema de permisos.** El rol es un
+valor más de `app_role` y se concede con una fila en `memberships`, como cualquier
+otro. Lo que cambia no es la forma del permiso sino su alcance, y ese alcance vive
+donde ya vivía: en `is_org_member`, `has_any_role`, `has_event_role` y
+`has_location_scope`, que son las cuatro compuertas que usan todas las políticas y
+todas las RPC. Cada una conserva su regla y le suma el alcance global.
+
+No es un bypass. RLS sigue habilitada, el inventario sigue sin ninguna política de
+escritura directa y ninguna RPC de operación cambió: la autoridad global recorre las
+mismas transiciones y deja el mismo Kardex. La prueba lo ejerce desde la API real —un
+intento de editar `inventory_lots` con sesión de SUPER_ADMIN no toca ninguna fila.
+
+Y nadie puede escalar su propio rol: `memberships` no tiene política de INSERT ni de
+UPDATE, `assign_membership_role` rechaza el rol `super_admin` y rechaza actuar sobre
+uno mismo, y conceder SUPER_ADMIN solo es posible por `grant_super_admin`, revocada
+para `anon` y `authenticated`. El rol se lee de la tabla, nunca de un claim del token.
+
+**Parametrización.** `/operaciones/parametrizacion` reutiliza lo que ya existía en vez
+de duplicarlo: los puntos se siguen administrando con `manage_delivery_point`, los
+catálogos siguen versionados con `effective_from`/`effective_to`, el alcance por bodega
+sigue en `membership_locations` y la auditoría sigue siendo `audit_events`. A esa
+auditoría solo le faltaba el valor anterior y el nuevo; se activa por tabla y excluye
+toda columna `_private`, porque copiarlas convertiría el registro en una fuga (`G-043`).
+
+Quedan fuera de lo parametrizable los catálogos que son contrato: los estados
+declarados alimentan el mapeo de estados operativos dentro de la RPC de aporte, y los
+departamentos son referencia DIVIPOLA.
+
+**`G-039` · P2 — confirmar un correo no es verificar una organización.** El
+autorregistro escribía `organization_verifications.state = 'verified'` en cuanto la
+persona confirmaba su buzón, de modo que una organización comprobada documentalmente
+y otra que solo abrió un correo quedaban escritas igual. Ahora el autorregistro deja
+`email_verified`, existe `document_pending`, y llegar a `verified` exige una decisión
+humana con actor y sustento. **La verificación documental en sí sigue pendiente**: es
+política de aceptación (`G-003`), no código.
 
 **`G-028` · P1 — el aporte observado ya no queda atrapado.** El verificador podía
 marcar «Con observaciones» y no existía ninguna función ni superficie para que el
@@ -123,6 +180,8 @@ Ninguna es técnica. Sin ellas no se puede incorporar un solo dato real.
 | `G-031` | Sin representante propio, los 21 puntos de gremios son públicos pero ningún aliado puede enrutar un aporte a ellos: `assert_delivery_point_tenant` exige mismo tenant. O cada gremio habilita a su representante, o el modelo admite entregar en un punto de otra organización validando en recepción |
 | `G-026` | Cada fila auditada genera una correlación distinta dentro de la misma RPC |
 | `G-027` | Las operaciones no generan un corte nuevo de métricas conciliadas |
+| `G-039` | El modelo ya distingue correo confirmado de organización verificada, pero **la verificación documental en sí sigue sin implementarse**: depende de `G-003` |
+| `G-043` | La auditoría guarda el antes y el después solo en las tablas del parametrizador; en las operativas seguiría llevando PII a `audit_events` |
 
 ### Deuda visual
 
@@ -132,8 +191,9 @@ Ninguna es técnica. Sin ellas no se puede incorporar un solo dato real.
 **Lo que se cerró.** `DQ-01` era una brecha del instrumento, no del producto:
 `audit:a11y` y `audit:visual` solo miraban seis rutas públicas, así que las
 cinco consolas —donde ocurre el trabajo real— no tenían ninguna evidencia y no
-podían declararse por encima de nivel 2. Ahora se auditan las once superficies,
-cada una con el rol que la usa. Eso destapó dos defectos reales:
+podían declararse por encima de nivel 2. Ahora se auditan catorce superficies
+—siete públicas y siete autenticadas, incluidas `/registro`, `/operaciones/reportes`
+y `/operaciones/parametrizacion`—, cada una con el rol que la usa. Eso destapó dos defectos reales:
 
 - El color de texto secundario pasaba el mínimo sobre el fondo normal (4,89:1)
   pero no sobre el fondo verde claro que marca **cualquier cosa seleccionada**
@@ -211,3 +271,30 @@ recaudo ni comunicación institucional.
 datos sintéticos y su aviso visible. Es la postura correcta y tiene valor: permite
 que la Gobernación y los gremios recorran el flujo y decidan lo que solo ellos
 pueden decidir. No autoriza datos reales, recaudo ni comunicación institucional.
+
+## Listo para migrar
+
+**NO LISTO PARA MIGRAR**, y la razón no es técnica.
+
+Lo técnico está en verde: las 38 migraciones aplican desde cero, `npm run verify`
+pasa de extremo a extremo y las dos auditorías de superficie no encuentran problemas.
+Lo que falta para tocar producción es lo que este repositorio no puede resolver solo:
+
+1. **Nada de esta línea se ha probado contra el remoto.** El remoto conserva 28
+   migraciones; estas diez —seis de la consolidación y cuatro de esta sesión— nunca se
+   han aplicado allí. Entre ellas hay cambios de contrato que rompen llamadores viejos:
+   `submit_donation_intake_v2` pasa a diecisiete parámetros, `create_shipment` a siete,
+   `register_delivery` a cinco, `shipments.carrier_name` se retira y `auth.enable_signup`
+   se abre con confirmación obligatoria. Aplicarlas exige ventana, respaldo y repetir el
+   arnés de simulación remota.
+2. **`G-002` a `G-006` siguen abiertas.** Operador, DPIA, política de aceptación,
+   proveedor financiero y autorización de marca son decisiones humanas. Sin ellas no
+   debe entrar un solo dato real, por muy verde que esté la suite.
+3. **`G-007`, `G-015` y `G-017`** —protección de contraseñas filtradas, WAF de borde y
+   enlaces verificables a remoto— son administración de entorno, no código.
+4. **Las credenciales de base expuestas siguen sin rotar** y no hay backups remotos con
+   PITR ni monitoreo externo.
+5. **La concesión de SUPER_ADMIN en remoto tendrá que hacerse con `service_role`**, no
+   desde la aplicación: es deliberado, pero hay que preverlo en el runbook de despliegue.
+
+El despliegue es una fase aparte y necesita autorización explícita.
