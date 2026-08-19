@@ -177,11 +177,57 @@ const UNIDAD = typeof unidades[0] === "string" ? unidades[0] : unidades[0]?.valu
 const { data: ubicaciones } = await bodega.from("inventory_locations")
   .select("id,name,organization_id,accepts_donations,dispatches_shipments")
   .eq("event_id", EVENT_ID).eq("active", true);
-let origen = null, destino = null;
-for (const u of ubicaciones ?? []) {
-  if (!u.dispatches_shipments) continue;
-  const pareja = (ubicaciones ?? []).find((v) => v.organization_id === u.organization_id && v.accepts_donations && v.id !== u.id);
-  if (pareja) { origen = u; destino = pareja; break; }
+function buscarPareja(lista) {
+  for (const u of lista ?? []) {
+    if (!u.dispatches_shipments) continue;
+    const pareja = (lista ?? []).find((v) => v.organization_id === u.organization_id && v.accepts_donations && v.id !== u.id);
+    if (pareja) return { origen: u, destino: pareja };
+  }
+  return { origen: null, destino: null };
+}
+
+let { origen, destino } = buscarPareja(ubicaciones);
+
+/*
+ * Un entorno provisionado desde cero suele tener un solo punto por organizacion, y sin dos
+ * bodegas no hay eje bodega a bodega que mostrar. Se crea la que falta por la misma RPC
+ * que usa /operaciones/centros, asi que nace versionada y auditada igual que si la hubiera
+ * creado una persona. La existente queda como destino y la nueva como origen de salida.
+ */
+if (!origen) {
+  const puntoAliado = (ubicaciones ?? []).find((u) => u.id === punto.id);
+  if (!puntoAliado) {
+    console.warn("   no se pudo ubicar el punto del aliado para crear su bodega de salida");
+  } else {
+    const { data: detalle } = await admin.from("inventory_locations")
+      .select("public_latitude,public_longitude,public_location_text").eq("id", puntoAliado.id).single();
+    console.log("   creando una bodega de salida para poder demostrar el traslado...");
+    const { error: creaError } = await admin.rpc("manage_delivery_point", {
+      p_location_id: null,
+      p_event_id: EVENT_ID,
+      p_organization_id: puntoAliado.organization_id,
+      p_name: `Bodega de salida ${puntoAliado.name}`.slice(0, 120),
+      p_public_location_text: detalle?.public_location_text ?? "Zona logistica",
+      p_exact_address_private: "Direccion operativa de demostracion, sin valor logistico real",
+      p_public_instructions: "Punto de salida para traslados entre bodegas.",
+      p_public_latitude: detalle?.public_latitude != null ? Number(detalle.public_latitude) + 0.01 : null,
+      p_public_longitude: detalle?.public_longitude != null ? Number(detalle.public_longitude) + 0.01 : null,
+      p_cold_chain_capable: false,
+      p_active: true,
+      p_accepts_donations: false,
+      p_dispatches_shipments: true,
+      p_accepted_categories: [],
+      p_idempotency_key: `demo-bodega-${marca}`,
+    });
+    if (creaError) {
+      console.warn(`   no se pudo crear la bodega de salida: ${creaError.message}`);
+    } else {
+      const { data: recargadas } = await bodega.from("inventory_locations")
+        .select("id,name,organization_id,accepts_donations,dispatches_shipments")
+        .eq("event_id", EVENT_ID).eq("active", true);
+      ({ origen, destino } = buscarPareja(recargadas));
+    }
+  }
 }
 
 console.log(`Evento: ${eventos[0].name}`);
