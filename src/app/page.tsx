@@ -30,6 +30,7 @@ type NeedProjection = {
   location_label: string;
   status: string;
   needed_quantity: number;
+  committed_quantity: number;
   covered_quantity: number;
   unit: string;
 };
@@ -51,7 +52,7 @@ export default async function HomePage() {
   const supabase = await createClient();
   const results = await Promise.all([
     supabase.from("public_event_dashboard").select("*").eq("slug", EVENT_SLUG).maybeSingle(),
-    supabase.from("public_need_projections").select("id,category,summary,location_label,status,needed_quantity,covered_quantity,unit").eq("event_id", EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
+    supabase.from("public_need_projections").select("id,category,summary,location_label,status,needed_quantity,committed_quantity,covered_quantity,unit").eq("event_id", EVENT_ID).eq("published", true).order("updated_at", { ascending: false }),
     supabase.rpc("public_need_map", { p_event_id: EVENT_ID }),
     supabase.rpc("public_collection_centers", { p_event_id: EVENT_ID }),
     supabase.rpc("public_logistics_map", { p_event_id: EVENT_ID }),
@@ -69,7 +70,9 @@ export default async function HomePage() {
     summary: need.summary,
     locationLabel: need.location_label,
     status: need.status,
+    projectionId: need.id,
     neededQuantity: Number(need.needed_quantity),
+    committedQuantity: Number(need.committed_quantity),
     coveredQuantity: Number(need.covered_quantity),
     unit: need.unit,
     latitude: need.latitude === null ? null : Number(need.latitude),
@@ -138,9 +141,11 @@ export default async function HomePage() {
           <div className="needs-catalog-grid">
             {visibleNeeds.length ? visibleNeeds.map((need) => {
               const needed = Number(need.needed_quantity);
+              const committed = Number(need.committed_quantity);
               const covered = Number(need.covered_quantity);
               const progress = needed > 0 ? Math.min(100, Math.round((covered / needed) * 100)) : 0;
-              const remaining = Math.max(0, needed - covered);
+              // Lo que un aliado puede aportar es lo que nadie ha comprometido todavía.
+              const remaining = Math.max(0, needed - committed);
               return (
                 <article className="need-card" key={need.id}>
                   <div className="need-card-head">
@@ -152,9 +157,9 @@ export default async function HomePage() {
                   <div className="need-card-coverage">
                     <div><strong>Faltan {numberFormat.format(remaining)} {need.unit}</strong><span>{progress}% cubierto</span></div>
                     <div className="progress" aria-label={`${progress}% cubierto`}><span style={{ width: `${progress}%` }} /></div>
-                    <small>{numberFormat.format(covered)} de {numberFormat.format(needed)} {need.unit}</small>
+                    <small>Solicitado {numberFormat.format(needed)} · comprometido {numberFormat.format(committed)} · entregado {numberFormat.format(covered)} {need.unit}</small>
                   </div>
-                  <Link className="button button-outline button-block" href="/donar">Quiero ayudar <ArrowRight size={15} /></Link>
+                  <Link className="button button-outline button-block" href={`/donar?necesidad=${need.id}`}>Quiero ayudar <ArrowRight size={15} /></Link>
                 </article>
               );
             }) : <p className="ops-empty">Ahora mismo no hay necesidades públicas vigentes. Los reportes pendientes siguen protegidos.</p>}

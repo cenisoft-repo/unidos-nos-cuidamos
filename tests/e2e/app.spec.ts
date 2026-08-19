@@ -88,6 +88,7 @@ test("ingreso no publica cuentas ni credenciales de práctica", async ({ page })
   await expect(page.getByText("aliado@rutasolidaria.local")).toHaveCount(0);
   await expect(page.getByLabel("Correo")).toBeVisible();
   await expect(page.getByLabel("Contraseña")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Crea tu cuenta de aliado" })).toBeVisible();
 });
 
 test("Supabase Auth abre el centro operativo con rol y sin PII pública", async ({ page }) => {
@@ -168,11 +169,52 @@ test("bodega guía recepción, compatibilidad y evidencia bloqueada", async ({ p
 
   await expect(page.getByRole("navigation", { name: "Etapas de bodega y logística" })).toBeVisible();
   await expect(page.getByRole("link", { name: /01 Recibir/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /03 Trasladar/ })).toBeVisible();
   await page.getByLabel("Buscar aporte, categoría o artículo").fill("Agua");
   await expect(page.getByRole("heading", { name: /Recepciones pendientes/ })).toBeVisible();
-  await expect(page.getByText("Solo se muestran necesidades con categoría y unidad compatibles.")).toBeVisible();
-  await expect(page.getByText("Evidencia privada", { exact: true })).toBeVisible();
-  await expect(page.getByText(/carga de fotos y documentos aún no está disponible/)).toBeVisible();
+  // La posición se lee del Kardex, no del saldo con el que nació el lote.
+  await expect(page.getByText(/físico, disponible y reservado salen del Kardex/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Traslados entre bodegas/ })).toBeVisible();
+  await expect(page.getByText("Sin escritura directa de stock", { exact: true })).toBeVisible();
+  await expect(page.getByText(/todas salen de movimientos registrados en el Kardex/)).toBeVisible();
+});
+
+test("bodega exige el transporte antes de permitir una salida", async ({ page }) => {
+  await page.goto("/ingresar?next=/operaciones/bodega");
+  await page.getByLabel("Correo").fill("bodega@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await expect(page).toHaveURL(/\/operaciones\/bodega$/);
+
+  await expect(page.getByRole("heading", { name: /Preparar salida/ })).toBeVisible();
+  await expect(page.getByText(/Sin datos de transporte completos el despacho no puede salir/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Movimiento/ })).toBeVisible();
+  await expect(page.getByText(/Preparando → Despachado → En movimiento → Llegó → Recibido/)).toBeVisible();
+});
+
+test("el registro de aliado explica la confirmación de correo antes de operar", async ({ page }) => {
+  await page.goto("/registro");
+  await expect(page.getByRole("heading", { name: /Regístrate como aliado/ })).toBeVisible();
+  await expect(page.getByLabel("Identificación o NIT")).toBeVisible();
+  await expect(page.getByLabel("Zona pública desde la que entregas")).toBeVisible();
+  await expect(page.getByText(/Al confirmar se crea tu organización con el rol ALIADO/)).toBeVisible();
+  await expect(page.getByText(/Antes de confirmar, la cuenta no puede registrar aportes/)).toBeVisible();
+  // Un solo registro para todos los perfiles: no hay un formulario por tipo de aliado.
+  await expect(page.getByLabel("¿Quién aporta?")).toBeVisible();
+});
+
+test("reportes operativos derivan del Kardex y exigen rol", async ({ page }) => {
+  await page.goto("/ingresar?next=/operaciones/reportes");
+  await page.getByLabel("Correo").fill("bodega@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await expect(page).toHaveURL(/\/operaciones\/reportes$/);
+
+  await expect(page.getByRole("heading", { name: /Estado global del inventario/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Reservas vigentes/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Productos en movimiento/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Donaciones asociadas a necesidades/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Historial de movimientos/ })).toBeVisible();
 });
 
 test("aporte guiado conserva pasos y genera ticket con QR", async ({ page }) => {
@@ -217,6 +259,29 @@ test("aporte guiado conserva pasos y genera ticket con QR", async ({ page }) => 
   await expect(page.getByText(/APO-[A-F0-9]{24}/)).toBeVisible();
   await expect(page.getByText("Escanea para consultar el estado")).toBeVisible();
   await expect(page.getByText(/La fotografía quedó vinculada.*privada/)).toBeVisible();
+});
+
+test("AYUDAR abre el aporte contra la necesidad y admite una parte de lo que falta", async ({ page }) => {
+  await page.goto("/");
+  const helpLink = page.getByRole("link", { name: /Quiero ayudar/ }).first();
+  await expect(helpLink).toHaveAttribute("href", /\/donar\?necesidad=/);
+  await expect(page.getByText(/Solicitado .* comprometido .* entregado/).first()).toBeVisible();
+
+  await page.goto("/ingresar?next=/donar");
+  await page.getByLabel("Correo").fill("aliado@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await expect(page).toHaveURL(/\/donar$/);
+
+  await page.goto("/donar?necesidad=62000000-0000-0000-0000-000000000001");
+  await expect(page.getByText(/Estás ayudando a la necesidad NEC-/)).toBeVisible();
+  await expect(page.getByText(/Puedes aportar una parte de lo que falta/)).toBeVisible();
+  // La necesidad fija la unidad del aporte: el aliado solo decide cuánto.
+  await expect(page.locator("#unit-0")).toBeDisabled();
+  await page.locator("#quantity-0").fill("25");
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "¿Dónde lo entregas?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Ordenar por cercanía/ })).toBeVisible();
 });
 
 test("aporte económico pasa de declaración privada a conciliación pública", async ({ page }) => {

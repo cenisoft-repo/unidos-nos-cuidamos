@@ -1,5 +1,5 @@
 begin;
-select plan(159);
+select plan(193);
 
 select is((
   select count(*)::integer
@@ -36,7 +36,7 @@ select has_column('public', 'donation_intakes', 'internal_contact_private', 'El 
 select has_column('public', 'donation_intakes', 'observations_private', 'Las observaciones operativas permanecen privadas');
 select has_column('public', 'donation_intake_items', 'declared_estimated_value_cop', 'Cada artículo puede conservar un valor declarado no conciliado');
 select has_function('public', 'submit_donation_intake', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric','uuid','jsonb'], 'Existe intake guiado con contexto de reporte privado');
-select has_function('public', 'submit_donation_intake_v2', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric','uuid','jsonb','jsonb','text'], 'Existe intake validado contra catálogos y centro');
+select has_function('public', 'submit_donation_intake_v2', array['uuid','uuid','donation_kind','text','text','jsonb','text','text','boolean','text','jsonb','numeric','uuid','jsonb','jsonb','text','uuid'], 'Existe intake validado contra catálogos, centro y necesidad');
 select has_column('public', 'donation_intakes', 'reporting_ally_code', 'El intake conserva el aliado declarado solo como referencia');
 select has_table('public', 'donation_intake_evidence', 'Existe el vínculo privado de fotografías del intake');
 select has_function('public', 'prepare_intake_photo_evidence', array['uuid','text','text','bigint','text'], 'Existe RPC segura para reservar evidencia fotográfica');
@@ -54,7 +54,7 @@ select ok(has_function_privilege('authenticated','public.manage_delivery_point(u
 select ok(not has_function_privilege('anon','public.manage_delivery_point(uuid,uuid,uuid,text,text,text,text,numeric,numeric,boolean,boolean,boolean,boolean,text[],text)','EXECUTE'), 'El visitante no puede parametrizar puntos');
 select ok(not has_function_privilege('anon','public.organization_delivery_points(uuid,uuid)','EXECUTE'), 'El visitante no consulta la selección privada por organización');
 select ok(not has_function_privilege('authenticated','public.submit_donation_intake(uuid,uuid,public.donation_kind,text,text,jsonb,text,text,boolean,text,jsonb,numeric,uuid,jsonb)','EXECUTE'), 'La aplicación autenticada no puede saltarse el contrato catalogado anterior');
-select ok(has_function_privilege('authenticated','public.submit_donation_intake_v2(uuid,uuid,public.donation_kind,text,text,jsonb,text,text,boolean,text,jsonb,numeric,uuid,jsonb,jsonb,text)','EXECUTE'), 'La aplicación autenticada ejecuta únicamente el intake catalogado');
+select ok(has_function_privilege('authenticated','public.submit_donation_intake_v2(uuid,uuid,public.donation_kind,text,text,jsonb,text,text,boolean,text,jsonb,numeric,uuid,jsonb,jsonb,text,uuid)','EXECUTE'), 'La aplicación autenticada ejecuta únicamente el intake catalogado');
 select ok(has_function_privilege('authenticated','public.prepare_intake_photo_evidence(uuid,text,text,bigint,text)','EXECUTE'), 'El usuario autenticado puede reservar una fotografía mediante la RPC');
 select ok(has_function_privilege('authenticated','public.confirm_intake_photo_evidence(uuid)','EXECUTE'), 'El usuario autenticado puede confirmar una fotografía mediante la RPC');
 select ok(not has_table_privilege('anon','public.donation_intake_evidence','SELECT'), 'El visitante no puede leer vínculos fotográficos privados');
@@ -175,7 +175,7 @@ select throws_ok(
     '[{"category":"Agua","category_code":"agua_potable","description":"Agua sintética sellada","quantity":1,"unit":"litro","condition":"sellado","storage_requirement":"ambiente"}]'::jsonb,
     null, '70000000-0000-0000-0000-000000000001',
     '{"specific_destination":false}'::jsonb,
-    public.current_donation_catalog_versions(), null
+    public.current_donation_catalog_versions(), null, null
   )$$,
   '22023',
   'Selecciona un punto de entrega activo de tu organización',
@@ -198,6 +198,7 @@ select * from public.submit_donation_intake_v2(
   '70000000-0000-0000-0000-000000000002',
   '{"donor_type":"cooperativa","economic_sector":"logistica_transporte","reporting_ally":"propacifico","specific_destination":false,"internal_contact":{}}'::jsonb,
   public.current_donation_catalog_versions(),
+  null,
   null
 );
 select ok((select intake_id from test_catalogued_intake) is not null, 'El intake catalogado registra el aporte compatible');
@@ -237,7 +238,7 @@ select throws_ok(
     '[{"category":"Logística","category_code":"combustible","description":"Artículo sintético","quantity":1,"unit":"unidad","condition":"sellado","storage_requirement":"ambiente"}]'::jsonb,
     null, '70000000-0000-0000-0000-000000000002',
     '{"reporting_ally":"aliado_inventado","specific_destination":false}'::jsonb,
-    public.current_donation_catalog_versions(), null
+    public.current_donation_catalog_versions(), null, null
   )$$,
   '22023',
   'Selecciona un aliado de referencia vigente',
@@ -253,7 +254,7 @@ select throws_ok(
     '[{"category":"Logística","category_code":"combustible","description":"Artículo sintético","quantity":1,"unit":"unidad","condition":"sellado","storage_requirement":"ambiente"}]'::jsonb,
     null, '70000000-0000-0000-0000-000000000002',
     '{"reporting_ally":"otro","observations":"","specific_destination":false}'::jsonb,
-    public.current_donation_catalog_versions(), null
+    public.current_donation_catalog_versions(), null, null
   )$$,
   '22023',
   'Especifica el otro aliado en Observaciones',
@@ -620,6 +621,54 @@ select is(
   0,
   'La auditoría de tablas hijas conserva el evento derivado del padre'
 );
+
+-- ============================================================ consolidación 2026-08-19
+-- Superficies que el loop de consolidación introduce o rehace. Comprueban el contrato:
+-- que exista, que esté concedida a quien debe y que no lo esté a quien no debe.
+
+select has_table('public', 'ally_registrations', 'Existe el registro único de aliados');
+select has_table('public', 'transfer_requests', 'Existe la solicitud de traslado entre bodegas');
+select has_table('public', 'membership_locations', 'Existe el alcance por bodega de una membresía');
+select has_view('public', 'inventory_lot_positions', 'La posición del lote es una vista derivada, no una tabla de saldos');
+select has_view('public', 'need_item_positions', 'La posición de la necesidad es una vista derivada');
+select has_column('public', 'donation_intakes', 'need_case_id', 'El aporte conserva la necesidad desde la que nació');
+select has_column('public', 'donation_intake_items', 'need_item_id', 'Cada línea del aporte conserva a qué artículo responde');
+select has_column('public', 'donation_items', 'need_item_id', 'La donación operacional conserva a qué artículo responde');
+select has_column('public', 'deliveries', 'quantity_missing', 'El faltante se registra aparte del daño');
+select has_column('public', 'shipments', 'transport_mode', 'El despacho conserva el tipo de transporte');
+select has_column('public', 'shipments', 'transport_plate', 'El despacho conserva la placa del vehículo');
+select has_column('public', 'shipments', 'destination_location_id', 'El despacho puede tener una bodega de destino');
+select hasnt_column('public', 'shipments', 'carrier_name', 'El campo de transportador suelto quedó retirado');
+select has_function('public', 'register_ally', array['uuid','ally_kind','text','text','text','text','text','text','numeric','numeric','text'], 'Existe el registro único de aliado');
+select has_function('public', 'activate_ally_registration', array[]::text[], 'Existe la activación con correo confirmado');
+select has_function('public', 'need_help_options', array['uuid'], 'Existe el contrato del camino AYUDAR');
+select has_function('public', 'inventory_position', array['uuid'], 'Existe el estado global del inventario');
+select has_function('public', 'request_stock_transfer', array['uuid','uuid','text','text','numeric','text','text'], 'Existe la solicitud de traslado');
+select has_function('public', 'decide_stock_transfer', array['uuid','text','numeric','text'], 'Existe la autorización de traslado');
+select has_function('public', 'create_shipment', array['uuid','uuid','uuid','uuid','text','jsonb','text'], 'Existe el constructor único de despachos');
+select has_function('public', 'dispatch_shipment', array['uuid'], 'Existe la salida física separada de la preparación');
+select has_function('public', 'advance_shipment', array['uuid','text'], 'Existe el seguimiento del movimiento');
+select has_function('public', 'register_delivery', array['uuid','numeric','numeric','numeric','text'], 'La entrega distingue recibido, dañado y faltante');
+select has_function('public', 'shipment_reconciliation', array['uuid'], 'Existe la conciliación despachado contra recibido');
+select has_function('public', 'organization_delivery_points_near', array['uuid','uuid','double precision','double precision'], 'Existe el orden por proximidad de puntos de acopio');
+
+select ok(has_function_privilege('anon','public.register_ally(uuid,public.ally_kind,text,text,text,text,text,text,numeric,numeric,text)','EXECUTE'), 'Cualquiera puede iniciar el registro de aliado');
+select ok(not has_function_privilege('anon','public.activate_ally_registration()','EXECUTE'), 'Nadie activa una cuenta ALIADO sin sesión');
+select ok(not has_function_privilege('authenticated','public.reserve_lot_quantity(uuid,numeric,uuid,uuid,text)','EXECUTE'), 'La primitiva de reserva no se ejecuta desde el cliente');
+select ok(not has_function_privilege('authenticated','public.assert_transport_ready(uuid)','EXECUTE'), 'La regla de transporte no se ejecuta desde el cliente');
+select ok(not has_function_privilege('anon','public.inventory_position(uuid)','EXECUTE'), 'El inventario no es una superficie pública');
+select ok(not has_table_privilege('anon','public.transfer_requests','SELECT'), 'Los traslados internos no son públicos');
+select ok(not has_table_privilege('anon','public.ally_registrations','SELECT'), 'El NIT y el contacto del aliado no son públicos');
+
+-- La posición del lote es aritmética del Kardex: el ejemplo de la Fase 8 debe cuadrar.
+select is(
+  (select quantity_available from public.inventory_lot_positions where lot_id = '71200000-0000-0000-0000-000000000001'),
+  0::numeric,
+  'El lote de demostración quedó sin disponible tras reservar y despachar sus 40 unidades');
+select is(
+  (select quantity_in_transit from public.inventory_lot_positions where lot_id = '71200000-0000-0000-0000-000000000001'),
+  40::numeric,
+  'Las 40 unidades despachadas figuran en movimiento hasta que el destino confirme');
 
 select * from finish();
 rollback;

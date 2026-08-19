@@ -7,21 +7,57 @@ import { EVENT_ID } from "@/lib/constants";
 import { toDonationFlowCatalogs, type DonationCatalogRow } from "@/lib/donation-catalogs";
 import { servesNonProductionData } from "@/lib/environment";
 import { toPublicCollectionCenter, type PublicCollectionCenterRow } from "@/lib/public-types";
-import { DonationIntakeForm } from "@/components/donation-intake-form";
+import { DonationIntakeForm, type NeedHelpTarget } from "@/components/donation-intake-form";
 
 export const metadata: Metadata = { title: "Registrar un aporte" };
 export const dynamic = "force-dynamic";
 
 type Partner = { organization_id: string; organizations: { name: string; verified: boolean; status: string } | null };
 
+type NeedHelpRow = {
+  need_case_id: string;
+  tracking_code: string;
+  summary: string;
+  location_label: string;
+  need_item_id: string;
+  category: string;
+  description: string | null;
+  unit: string;
+  quantity_requested: number;
+  quantity_committed: number;
+  quantity_pending: number;
+};
+
+// Agrupa las filas planas de `need_help_options` en la necesidad y sus artículos pendientes.
+function toNeedHelpTarget(rows: NeedHelpRow[]): NeedHelpTarget | undefined {
+  const first = rows[0];
+  if (!first) return undefined;
+  return {
+    needCaseId: first.need_case_id,
+    trackingCode: first.tracking_code,
+    summary: first.summary,
+    locationLabel: first.location_label,
+    items: rows.map((row) => ({
+      needItemId: row.need_item_id,
+      category: row.category,
+      description: row.description ?? row.category,
+      unit: row.unit,
+      quantityRequested: Number(row.quantity_requested),
+      quantityCommitted: Number(row.quantity_committed),
+      quantityPending: Number(row.quantity_pending),
+    })),
+  };
+}
+
 export default async function DonatePage({
   searchParams,
 }: {
-  searchParams: Promise<{ centro?: string | string[] }>;
+  searchParams: Promise<{ centro?: string | string[]; necesidad?: string | string[] }>;
 }) {
   const supabase = await createClient();
   const query = await searchParams;
   const initialCenterId = typeof query.centro === "string" ? query.centro : undefined;
+  const needProjectionId = typeof query.necesidad === "string" ? query.necesidad : undefined;
   const [userResult, catalogsResult] = await Promise.all([
     supabase.auth.getUser(),
     supabase.rpc("donation_flow_catalogs"),
@@ -31,6 +67,7 @@ export default async function DonatePage({
   const catalogs = toDonationFlowCatalogs((catalogsResult.data ?? []) as DonationCatalogRow[]);
   let partner: Partner | null = null;
   let centers = [] as ReturnType<typeof toPublicCollectionCenter>[];
+  let need: NeedHelpTarget | undefined;
   if (user) {
     const membershipResult = await supabase
       .from("memberships")
@@ -53,10 +90,15 @@ export default async function DonatePage({
       assertSupabaseSuccess("puntos_entrega_organizacion", [centersResult]);
       centers = ((centersResult.data ?? []) as PublicCollectionCenterRow[]).map(toPublicCollectionCenter);
     }
+    if (needProjectionId) {
+      const needResult = await supabase.rpc("need_help_options", { p_projection_id: needProjectionId });
+      assertSupabaseSuccess("necesidad_ayudar", [needResult]);
+      need = toNeedHelpTarget((needResult.data ?? []) as NeedHelpRow[]);
+    }
   }
 
   return <>
     <section className="page-hero donate-hero"><div className="shell page-hero-grid"><div><p className="eyebrow">Tu ayuda, paso a paso</p><h1>Donar puede ser<br />mucho más sencillo.</h1><p className="lead">Elige qué aportar, dónde entregarlo y recibe un código para seguirlo. Nada cuenta como impacto antes de ser verificado.</p></div>{servesNonProductionData && <aside className="page-aside"><strong>Instancia de práctica</strong>No ingreses información real, tarjetas, claves ni cuentas bancarias.</aside>}</div></section>
-    <section className="form-section"><div className="shell form-shell">{partner ? <DonationIntakeForm organizationId={partner.organization_id} organizationName={partner.organizations?.name ?? "Aliado autorizado"} centers={centers} initialCenterId={initialCenterId} catalogs={catalogs} /> : <div className="form-card"><div className="form-body"><LockKeyhole size={34} color="var(--forest-2)" /><h2 style={{ marginTop: 18 }}>Inicia sesión como aliado</h2><p>Registrar un aporte requiere una membresía vigente en una organización verificada.</p><Link className="button button-dark" href="/ingresar?next=/donar">Ingresar para registrar</Link></div></div>}<aside className="privacy-panel"><h2>Qué sucede después</h2><ul><li><ScanLine size={18} /><span>Recibes un código para seguir tu aporte.</span></li><li><BadgeCheck size={18} /><span>Un equipo autorizado revisa los datos.</span></li><li><Boxes size={18} /><span>Solo lo recibido y aceptado crea inventario.</span></li><li><LockKeyhole size={18} /><span>Contacto y soportes permanecen privados.</span></li></ul></aside></div></section>
+    <section className="form-section"><div className="shell form-shell">{partner ? <DonationIntakeForm organizationId={partner.organization_id} organizationName={partner.organizations?.name ?? "Aliado autorizado"} centers={centers} initialCenterId={initialCenterId} catalogs={catalogs} need={need} /> : <div className="form-card"><div className="form-body"><LockKeyhole size={34} color="var(--forest-2)" /><h2 style={{ marginTop: 18 }}>Inicia sesión como aliado</h2><p>Registrar un aporte requiere una membresía vigente en una organización verificada.</p><Link className="button button-dark" href={`/ingresar?next=${encodeURIComponent(needProjectionId ? `/donar?necesidad=${needProjectionId}` : "/donar")}`}>Ingresar para registrar</Link><p className="form-notice" style={{ marginTop: 14 }}>¿Todavía no eres aliado? <Link href="/registro">Regístrate y confirma tu correo</Link>.</p></div></div>}<aside className="privacy-panel"><h2>Qué sucede después</h2><ul><li><ScanLine size={18} /><span>Recibes un código para seguir tu aporte.</span></li><li><BadgeCheck size={18} /><span>Un equipo autorizado revisa los datos.</span></li><li><Boxes size={18} /><span>Solo lo recibido y aceptado crea inventario.</span></li><li><LockKeyhole size={18} /><span>Contacto y soportes permanecen privados.</span></li></ul></aside></div></section>
   </>;
 }

@@ -364,4 +364,4 @@ Mientras exista el enlace, `npm run preflight:local` falla a propósito y detien
 
 ## Procedimiento anterior
 
-`npm run provision:sandbox-access` y `npm run simulate:sandbox` siguen existiendo, pero están fijados al sandbox `vcgwfyhytzgyzicfbikf` y a sus dos centros sintéticos. Para cualquier entorno nuevo usa `bootstrap:environment` y `verify:environment-flow`, que no están atados a ningún proyecto.
+`npm run simulate:sandbox` sigue existiendo, pero está fijado al sandbox `vcgwfyhytzgyzicfbikf` y a sus dos centros sintéticos. `provision:sandbox-access` se retiró en la consolidación del 19 de agosto: hacía el mismo trabajo que `bootstrap:environment` con el proyecto, el evento y las organizaciones escritos en el código. Para cualquier entorno usa `bootstrap:environment` y `verify:environment-flow`, que no están atados a ningún proyecto.

@@ -1,8 +1,29 @@
 # Estado comprobado
 
-Fecha: 2026-08-17 · Puerta: **G1**, sandbox con datos 100 % sintéticos.
+Fecha: 2026-08-18 · Puerta: **G1**, sandbox con datos 100 % sintéticos.
 G2 y G3 siguen bloqueadas: no deben incorporarse operadores, PII, dinero ni
 comunicación institucional.
+
+## Consolidación integrada el 2026-08-18 · sin ejecución contra base de datos
+
+La rama `claude/new-session-tflf63` implementó las dieciocho fases del loop de
+consolidación de donaciones, inventario y logística y se integró aquí. Lo que
+esa línea pudo comprobar en su entorno: `eslint`, `tsc --noEmit`, `next build`,
+47/47 pruebas unitarias y la validación sintáctica de las migraciones y los
+archivos pgTAP con el analizador oficial de PostgreSQL.
+
+Lo que **no** se ejecutó allí y sigue pendiente tras el merge: pgTAP, RLS,
+concurrencia y Playwright sobre el conjunto integrado. Aquel entorno no pudo
+levantar Supabase local porque su política de egreso bloquea la descarga de las
+imágenes de contenedor. Hasta que `npm run verify` corra verde con Docker sobre
+la rama de integración (`G-038`), esa parte es código revisado y no verificado
+contra una base de datos.
+
+Cambios de contrato que exigen atención al aplicar: `submit_donation_intake_v2`
+pasa de dieciséis a diecisiete parámetros, `create_shipment` de cinco a siete,
+`register_delivery` de cuatro a cinco, `shipments.carrier_name` se retira y
+`auth.enable_signup` se abre con confirmación de correo obligatoria. Los cuatro
+llamadores de scripts y las pruebas SQL ya están actualizados.
 
 ## Lo verificado
 

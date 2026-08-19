@@ -41,6 +41,8 @@ type IntakeRow = {
 
 type NeedRow = { tracking_code: string; category: string; description: string; public_location_text: string; status: string; priority_score: number | null; expires_at: string; created_at: string };
 type LotRow = { lot_code: string; category: string; status: string; quantity_initial: number; unit: string; condition: string; created_at: string };
+// La posición vigente se deriva del Kardex; `quantity_initial` es solo con cuánto nació el lote.
+type LotPositionRow = { lot_id: string; lot_code: string; quantity_physical: number; quantity_available: number; quantity_reserved: number; quantity_in_transit: number; quantity_delivered: number };
 type FinanceRow = { public_reference: string; transaction_type: string; amount: number; currency: string; status: string; provider: string; reconciled_at: string | null; created_at: string };
 
 export async function GET(request: Request) {
@@ -58,15 +60,17 @@ export async function GET(request: Request) {
     supabase.from("need_cases").select("tracking_code,category,description,public_location_text,status,priority_score,expires_at,created_at").eq("event_id", EVENT_ID).order("created_at", { ascending: false }),
     supabase.from("donation_intakes").select("id,tracking_code,organization_id,kind,status,public_attribution_kind,donor_type,economic_sector,specific_destination,destination_department,destination_municipality,estimated_beneficiaries,delivery_channel,declared_amount,currency,submitted_at,organizations(name),donation_intake_items(id,category,description,quantity,unit,condition,storage_requirement,declared_estimated_value_cop)").eq("event_id", EVENT_ID).order("submitted_at", { ascending: false }),
     supabase.from("inventory_lots").select("lot_code,category,status,quantity_initial,unit,condition,created_at").eq("event_id", EVENT_ID).order("created_at", { ascending: false }),
+    supabase.from("inventory_lot_positions").select("lot_id,lot_code,quantity_physical,quantity_available,quantity_reserved,quantity_in_transit,quantity_delivered").eq("event_id", EVENT_ID),
     supabase.from("financial_transactions").select("public_reference,transaction_type,amount,currency,status,provider,reconciled_at,created_at").eq("event_id", EVENT_ID).order("created_at", { ascending: false }),
   ]);
   const queryError = firstSupabaseError(results);
   if (queryError) return observation.complete(databaseUnavailableResponse("exportacion_operativa", queryError), "database_unavailable");
-  const [{ data: needsData }, { data: intakesData }, { data: lotsData }, { data: financeData }] = results;
+  const [{ data: needsData }, { data: intakesData }, { data: lotsData }, { data: positionsData }, { data: financeData }] = results;
 
   const needs = (needsData ?? []) as NeedRow[];
   const intakes = (intakesData ?? []) as unknown as IntakeRow[];
   const lots = (lotsData ?? []) as LotRow[];
+  const positionByLot = new Map(((positionsData ?? []) as LotPositionRow[]).map((row) => [row.lot_code, row]));
   const finances = (financeData ?? []) as FinanceRow[];
   const itemRows = intakes.flatMap((intake) => (intake.donation_intake_items ?? []).map((item) => ({
     ...item,
@@ -155,12 +159,17 @@ export async function GET(request: Request) {
   addDataSheet(workbook, {
     name: "Inventario",
     title: "Inventario visible por RLS",
-    description: "Solo los lotes recibidos operacionalmente aparecen en esta hoja.",
+    description: "Solo los lotes recibidos operacionalmente aparecen en esta hoja. Físico, disponible, reservado, en movimiento y entregado se derivan del Kardex.",
     columns: [
       { header: "Lote", width: 28, value: (row: LotRow) => row.lot_code },
       { header: "Categoría", width: 18, value: (row) => row.category },
       { header: "Estado", width: 18, value: (row) => row.status },
       { header: "Cantidad inicial", width: 18, value: (row) => Number(row.quantity_initial), numFmt: "#,##0.000" },
+      { header: "Físico", width: 14, value: (row) => Number(positionByLot.get(row.lot_code)?.quantity_physical ?? 0), numFmt: "#,##0.000" },
+      { header: "Disponible", width: 14, value: (row) => Number(positionByLot.get(row.lot_code)?.quantity_available ?? 0), numFmt: "#,##0.000" },
+      { header: "Reservado", width: 14, value: (row) => Number(positionByLot.get(row.lot_code)?.quantity_reserved ?? 0), numFmt: "#,##0.000" },
+      { header: "En movimiento", width: 16, value: (row) => Number(positionByLot.get(row.lot_code)?.quantity_in_transit ?? 0), numFmt: "#,##0.000" },
+      { header: "Entregado", width: 14, value: (row) => Number(positionByLot.get(row.lot_code)?.quantity_delivered ?? 0), numFmt: "#,##0.000" },
       { header: "Unidad", width: 14, value: (row) => row.unit },
       { header: "Condición", width: 18, value: (row) => row.condition },
       { header: "Creación", width: 22, value: (row) => new Date(row.created_at), numFmt: "yyyy-mm-dd hh:mm" },

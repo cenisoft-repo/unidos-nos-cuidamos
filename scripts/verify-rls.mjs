@@ -59,10 +59,17 @@ assert.ok(
   publicLogistics.filter((row) => row.source_type === "collection_center").length > 0,
   "La logística pública contiene los centros activos",
 );
-// El transportador es privado por decisión de producto: se comprueba fila por fila.
+/*
+ * Unión de las dos ramas: la comprobación por propiedades en TODAS las filas
+ * (no un conteo atado al seed, que se rompe cada vez que cambian los centros)
+ * y el conjunto completo de columnas privadas que ninguna de las dos versiones
+ * cubría entera: dirección exacta, transportador y placa.
+ */
+const columnasLogisticasPrivadas = ["exact_address_private", "carrier_name", "transport_plate", "transport_contact"];
 for (const fila of publicLogistics) {
-  assert.equal("exact_address_private" in fila, false, "La logística pública no expone direcciones operacionales");
-  assert.equal("carrier_name" in fila, false, "La logística pública no expone transportadores");
+  for (const columna of columnasLogisticasPrivadas) {
+    assert.equal(columna in fila, false, `La logística pública no expone ${columna}`);
+  }
 }
 
 const { error: logisticsWriteError } = await anonymous.from("public_logistics_projections").insert({

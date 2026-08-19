@@ -114,8 +114,10 @@ insert into public.stock_movements(event_id,organization_id,lot_id,movement_type
 ('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','71200000-0000-0000-0000-000000000001','release',40,'seed-map-release-001','Conversión sintética de reserva a despacho','00000000-0000-0000-0000-000000000103'),
 ('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','71200000-0000-0000-0000-000000000001','dispatch',-40,'seed-map-dispatch-001','Salida sintética en tránsito','00000000-0000-0000-0000-000000000103');
 
-insert into public.shipments(id,event_id,organization_id,shipment_code,status,carrier_name,public_destination,origin_location_id,dispatched_at,created_by,idempotency_key) values
-('71400000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','DSP-DEMO-MAPA-001','in_transit','Transportador sintético','Medellín · zona aproximada','70000000-0000-0000-0000-000000000002','2026-08-14T08:30:00-05:00','00000000-0000-0000-0000-000000000103','seed-map-shipment-001');
+-- El despacho de demostración lleva los datos de transporte que la regla de negocio exige antes
+-- de salir; sin ellos no habría podido pasar a EN MOVIMIENTO.
+insert into public.shipments(id,event_id,organization_id,shipment_code,status,public_destination,origin_location_id,dispatched_at,created_by,idempotency_key,transport_mode,transport_company,transport_contact_name,transport_contact_document,transport_contact_phone,transport_vehicle,transport_plate,transport_responsible) values
+('71400000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','DSP-DEMO-MAPA-001','in_transit','Medellín · zona aproximada','70000000-0000-0000-0000-000000000002','2026-08-14T08:30:00-05:00','00000000-0000-0000-0000-000000000103','seed-map-shipment-001','transportadora','Transportes Sintéticos SAS','Conductor Sintético','CC-00000001','6040000000','Camión sencillo','ABC123','Marta Bodega');
 
 insert into public.shipment_items(id,shipment_id,allocation_id,quantity) values
 ('71500000-0000-0000-0000-000000000001','71400000-0000-0000-0000-000000000001','71300000-0000-0000-0000-000000000001',40);

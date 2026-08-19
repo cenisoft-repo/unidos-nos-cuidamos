@@ -53,6 +53,7 @@ const payload = {
   },
   p_catalog_versions: catalogVersions,
   p_declared_category_code: null,
+  p_need_case_id: null,
 };
 
 const results = await Promise.all([

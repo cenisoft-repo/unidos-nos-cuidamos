@@ -342,18 +342,23 @@ async function main() {
     record("idempotencia:asignacion", allocationId === repeatedAllocationId, { allocationId });
 
     const shipmentKey = `${runId}-shipment`;
-    const shipmentId = success("creación de despacho", await warehouse.rpc("create_shipment", {
+    const shipmentPayload = {
       p_allocation_id: allocationId,
+      p_transfer_request_id: null,
+      p_origin_location_id: PARTNER_CENTER_ID,
+      p_destination_location_id: null,
       p_public_destination: `Zona sintética ${runId}`,
-      p_carrier_name: "Operador sintético",
+      p_transport: {
+        mode: "transportadora", company: `Transportes sintéticos ${runId}`,
+        contact_name: `Conductor ${runId}`, contact_document: `CC-${runId}`,
+        contact_phone: "6040000000", vehicle: "Camión sencillo",
+        plate: "ABC123", responsible: `Responsable ${runId}`,
+      },
       p_idempotency_key: shipmentKey,
-    }));
-    const repeatedShipmentId = success("reintento de despacho", await warehouse.rpc("create_shipment", {
-      p_allocation_id: allocationId,
-      p_public_destination: `Zona sintética ${runId}`,
-      p_carrier_name: "Operador sintético",
-      p_idempotency_key: shipmentKey,
-    }));
+    };
+    const shipmentId = success("creación de despacho", await warehouse.rpc("create_shipment", shipmentPayload));
+    const repeatedShipmentId = success("reintento de despacho", await warehouse.rpc("create_shipment", shipmentPayload));
+    success("salida del despacho", await warehouse.rpc("dispatch_shipment", { p_shipment_id: shipmentId }));
     const shipment = valueOf(success(
       "despacho operacional",
       await warehouse.from("shipments").select("id,shipment_code,status").eq("id", shipmentId).single(),
@@ -362,18 +367,15 @@ async function main() {
     evidence.artifacts.shipmentCode = shipment.shipment_code;
 
     const deliveryKey = `${runId}-delivery`;
-    const deliveryId = success("registro de entrega", await warehouse.rpc("register_delivery", {
+    const deliveryPayload = {
       p_shipment_id: shipmentId,
       p_quantity_delivered: 10,
       p_quantity_damaged: 0,
+      p_quantity_missing: 0,
       p_idempotency_key: deliveryKey,
-    }));
-    const repeatedDeliveryId = success("reintento de entrega", await warehouse.rpc("register_delivery", {
-      p_shipment_id: shipmentId,
-      p_quantity_delivered: 10,
-      p_quantity_damaged: 0,
-      p_idempotency_key: deliveryKey,
-    }));
+    };
+    const deliveryId = success("registro de entrega", await warehouse.rpc("register_delivery", deliveryPayload));
+    const repeatedDeliveryId = success("reintento de entrega", await warehouse.rpc("register_delivery", deliveryPayload));
     record("idempotencia:entrega", deliveryId === repeatedDeliveryId, { deliveryId });
 
     const warehouseValidation = await warehouse.rpc("validate_delivery", {
@@ -453,6 +455,7 @@ async function main() {
       },
       p_catalog_versions: catalogVersions,
       p_declared_category_code: moneyCategory.value,
+      p_need_case_id: null,
     };
     const moneyIntake = valueOf(success("registro económico", await partner.rpc("submit_donation_intake_v2", moneyPayload)));
     const repeatedMoneyIntake = valueOf(success("reintento económico", await partner.rpc("submit_donation_intake_v2", moneyPayload)));
@@ -548,6 +551,7 @@ async function main() {
       }],
       p_preferred_location_id: COORDINATION_CENTER_ID,
       p_declared_category_code: null,
+      p_need_case_id: null,
     };
     const crossCenterAttempt = await partner.rpc("submit_donation_intake_v2", crossCenterPayload);
     if (!crossCenterAttempt.error) {

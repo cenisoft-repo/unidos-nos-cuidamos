@@ -8,6 +8,8 @@ export type PublicCollectionCenter = {
   coldChainCapable: boolean;
   latitude: number | null;
   longitude: number | null;
+  /** Distancia a la ubicación declarada por el aliado; nula cuando no se compartió ubicación. */
+  distanceKm: number | null;
 };
 
 export type PublicCollectionCenterRow = {
@@ -20,6 +22,7 @@ export type PublicCollectionCenterRow = {
   cold_chain_capable: boolean;
   latitude: number | null;
   longitude: number | null;
+  distance_km?: number | null;
 };
 
 export function toPublicCollectionCenter(row: PublicCollectionCenterRow): PublicCollectionCenter {
@@ -33,6 +36,7 @@ export function toPublicCollectionCenter(row: PublicCollectionCenterRow): Public
     coldChainCapable: row.cold_chain_capable,
     latitude: row.latitude === null ? null : Number(row.latitude),
     longitude: row.longitude === null ? null : Number(row.longitude),
+    distanceKm: row.distance_km === null || row.distance_km === undefined ? null : Number(row.distance_km),
   };
 }
 

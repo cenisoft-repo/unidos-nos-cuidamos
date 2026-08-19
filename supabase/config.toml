@@ -160,7 +160,7 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+additional_redirect_urls = ["https://127.0.0.1:3000", "http://127.0.0.1:3000/**", "http://localhost:3000/**"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -172,8 +172,10 @@ enable_refresh_token_rotation = true
 # Allows refresh tokens to be reused after expiry, up to the specified interval in seconds.
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
-# Allow/disallow new user signups to your project.
-enable_signup = false
+# Alta abierta para el recorrido ALIADO de la Fase 2. Crear la identidad no otorga ningún
+# permiso: sin membresía activa las políticas RLS no devuelven una sola fila operativa, y el
+# rol ALIADO solo se entrega en `activate_ally_registration()` con el correo ya confirmado.
+enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
@@ -217,14 +219,14 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Mantiene el proveedor de correo para las cuentas provisionadas; el alta global
-# permanece cerrada mediante auth.enable_signup = false.
+# Proveedor de correo para las cuentas provisionadas y para el registro de aliados.
 enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
-# If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+# Registro → Confirmación de correo → Activación de cuenta → Rol ALIADO: la confirmación es
+# la puerta del recorrido, así que no puede quedar desactivada.
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
