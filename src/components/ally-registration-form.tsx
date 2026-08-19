@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, LoaderCircle, MailCheck, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toOperationalMessage } from "@/lib/user-errors";
@@ -21,6 +22,7 @@ export const ALLY_KINDS = [
 type Registered = { platform_identifier: string; email: string };
 
 export function AllyRegistrationForm() {
+  const router = useRouter();
   // La coordenada aproximada es opcional: sirve para recomendar el punto más cercano y nunca
   // se publica como dirección exacta.
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -59,16 +61,32 @@ export function AllyRegistrationForm() {
       return;
     }
 
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signUp, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: { emailRedirectTo: `${window.location.origin}/registro/confirmado` },
     });
-    setPending(false);
     if (signUpError) {
+      setPending(false);
       setError(toOperationalMessage(signUpError));
       return;
     }
+
+    /*
+     * Si el proyecto no exige confirmación de correo, el alta devuelve sesión de una vez.
+     * En ese caso mandar a la persona a «revisa tu correo» sería mentirle: no va a llegar
+     * ninguno. Se continúa directamente al paso de activación, que es el que crea la
+     * organización y concede el rol ALIADO.
+     *
+     * No se codifica cuál de los dos modos está activo: se mira lo que devolvió el alta.
+     * Así volver a exigir la confirmación es un cambio de configuración y no de código.
+     */
+    if (signUp.session) {
+      router.push("/registro/confirmado");
+      return;
+    }
+
+    setPending(false);
     const row = (Array.isArray(data) ? data[0] : data) as { platform_identifier: string };
     setRegistered({ platform_identifier: row.platform_identifier, email });
   }

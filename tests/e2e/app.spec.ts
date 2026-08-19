@@ -197,10 +197,40 @@ test("el registro de aliado explica la confirmación de correo antes de operar",
   await expect(page.getByRole("heading", { name: /Regístrate como aliado/ })).toBeVisible();
   await expect(page.getByLabel("Identificación o NIT")).toBeVisible();
   await expect(page.getByLabel("Zona pública desde la que entregas")).toBeVisible();
-  await expect(page.getByText(/Al confirmar se crea tu organización con el rol ALIADO/)).toBeVisible();
-  await expect(page.getByText(/Antes de confirmar, la cuenta no puede registrar aportes/)).toBeVisible();
+  // La redacción no promete un correo, porque el proyecto puede tener la confirmación
+  // desactivada; lo que sí es invariante es que la cuenta no opera hasta activarse.
+  await expect(page.getByText(/Al activarla se crea tu organización con el rol ALIADO/)).toBeVisible();
+  await expect(page.getByText(/Hasta activarla, la cuenta no puede registrar aportes/)).toBeVisible();
   // Un solo registro para todos los perfiles: no hay un formulario por tipo de aliado.
   await expect(page.getByLabel("¿Quién aporta?")).toBeVisible();
+});
+
+test("el registro de aliado llega hasta la cuenta activa sin correo de confirmación", async ({ page }) => {
+  /*
+   * G-045: mientras el proyecto no exija confirmación de correo, el alta devuelve sesión
+   * y el recorrido tiene que continuar solo. Antes esta rama no existía: la persona veía
+   * «revisa tu correo» y esperaba un mensaje que nunca iba a llegar.
+   */
+  const sufijo = Date.now().toString(36);
+  await page.goto("/registro");
+  await page.getByLabel("¿Quién aporta?").selectOption("empresa");
+  await page.getByLabel("Nombre o razón social").fill(`Aliado de prueba ${sufijo}`);
+  await page.getByLabel("Identificación o NIT").fill(`NIT-${sufijo}`);
+  await page.getByLabel("Teléfono de contacto").fill("6041234567");
+  await page.getByLabel("Responsable").fill("Responsable de prueba");
+  await page.getByLabel("Zona pública desde la que entregas").fill("Manizales centro");
+  await page.getByLabel("Correo de contacto").fill(`aliado.${sufijo}@example.com`);
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Crear cuenta de aliado" }).click();
+
+  // Sin confirmación de correo el recorrido continúa solo hasta la activación.
+  await expect(page).toHaveURL(/\/registro\/confirmado$/, { timeout: 30000 });
+  await expect(page.getByRole("heading", { name: /Cuenta ALIADO activa/ })).toBeVisible({ timeout: 30000 });
+
+  // Y la cuenta ya opera: el formulario de aporte reconoce su organización.
+  await page.goto("/donar");
+  await expect(page.getByText("Paso 1 de 4")).toBeVisible({ timeout: 30000 });
 });
 
 test("reportes operativos derivan del Kardex y exigen rol", async ({ page }) => {

@@ -22,9 +22,9 @@ export default function AllyRegistrationPage() {
           <h2>Cómo se activa la cuenta</h2>
           <ul>
             <li><UserPlus size={18} /><span>Registras el aliado y reservamos su identificador de plataforma.</span></li>
-            <li><MailCheck size={18} /><span>Confirmas el correo desde el mensaje que enviamos.</span></li>
-            <li><BadgeCheck size={18} /><span>Al confirmar se crea tu organización con el rol ALIADO.</span></li>
-            <li><ShieldCheck size={18} /><span>Antes de confirmar, la cuenta no puede registrar aportes.</span></li>
+            <li><MailCheck size={18} /><span>Creas tu cuenta con el correo y la contraseña que elijas.</span></li>
+            <li><BadgeCheck size={18} /><span>Al activarla se crea tu organización con el rol ALIADO.</span></li>
+            <li><ShieldCheck size={18} /><span>Hasta activarla, la cuenta no puede registrar aportes.</span></li>
           </ul>
         </aside>
       </div></section>

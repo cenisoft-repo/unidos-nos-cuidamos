@@ -105,3 +105,15 @@ Decisión: `organization_verifications.state` distingue `email_verified` (el buz
 Motivo: escribir `verified` por haber confirmado un correo hacía indistinguible una organización comprobada de una que solo abrió un buzón, y esa distinción es exactamente la que una plataforma humanitaria necesita antes de aceptar aportes a nombre de terceros.
 
 Consecuencia: la verificación documental en sí no se implementa aquí; depende de la política de aceptación (`G-003`). Lo que existe es el sitio correcto donde escribirla cuando esa política llegue.
+
+## ADR-014 · 2026-08-19 · La confirmación de correo se desactiva temporalmente
+
+Decisión: mientras el proyecto no tenga SMTP propio, el registro de aliado no exige confirmación de correo. La cuenta queda utilizable en cuanto se crea, con el correo y la contraseña que la persona elija, en el dominio que quiera.
+
+Motivo: el servicio de correo integrado de Supabase no entrega de forma fiable a direcciones externas (`G-044`), así que exigir la confirmación dejaba el autorregistro sin salida —nadie podía completar una cuenta— sin dar a cambio ninguna garantía real, porque el correo simplemente no llegaba.
+
+Consecuencia, dicha sin adornos: **se pierde la comprobación de que quien registra controla ese buzón.** Alguien puede registrarse con el correo de otro. Eso es tolerable hoy porque el entorno es G1 con datos sintéticos y sin aliados reales; deja de serlo en cuanto entre el primero. Queda como `G-045`.
+
+La aplicación no codifica cuál de los dos modos está activo: mira si el alta devolvió sesión. Restablecer la puerta es volver a poner `enable_confirmations = true` y activar «Confirm sign up» en el panel, sin tocar código y sin desplegar. El `config.toml` del sandbox refleja el mismo modo que el proyecto remoto para que el recorrido se pruebe tal como se opera.
+
+Lo que no cambia: `activate_ally_registration` sigue exigiendo `email_confirmed_at`, de modo que la activación sigue siendo un paso explícito y auditable. Lo que se relaja es quién pone esa marca —el servicio de Auth en vez del enlace del correo—, no que exista.
