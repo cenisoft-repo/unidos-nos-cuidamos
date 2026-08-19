@@ -349,6 +349,27 @@ existencia y no de fallo.
 | `/api/exports/operations.xlsx` sin sesión | 401 |
 | Autoridad global | concedida, activa, correo confirmado |
 
+## Descubierto al probar el registro en producción (2026-08-19)
+
+Dos cosas, una nuestra y una de infraestructura.
+
+**Nuestra.** El formulario devolvía «No fue posible completar la acción» ante una
+contraseña que no cumplía la política de Auth —doce caracteres con mayúscula, minúscula,
+dígito y símbolo—. El servicio responde `weak_password` en inglés, y `toOperationalMessage`
+no reconocía ese caso, así que lo convertía en el mensaje genérico: la persona veía que
+algo falló sin ninguna forma de saber qué corregir. Corregido con mensajes propios para
+contraseña débil, correo ya registrado, fallo de envío y credenciales inválidas, y cuatro
+pruebas que lo fijan.
+
+**De infraestructura (`G-044`).** El proyecto no tiene SMTP propio. El autorregistro
+depende del correo de confirmación y el servicio integrado de Supabase no lo entrega a
+direcciones externas de forma fiable. Mientras eso siga así, un aliado real no puede
+completar el registro. Para probar el recorrido sin SMTP, la administración crea la cuenta
+en Authentication → Users con «Auto Confirm User» y la persona activa en
+`/registro/confirmado`: el modelo no se debilita, porque la confirmación la hace un
+administrador en vez del correo. **Lo que no debe hacerse es desactivar «Confirm sign up»**,
+que es la puerta sobre la que descansa ADR-013.
+
 ## Lo que este despliegue no cambia
 
 `G-002` a `G-006` (operador, DPIA, política de aceptación, proveedor financiero, marca)
