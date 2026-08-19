@@ -144,6 +144,46 @@ Salidas, en orden de menor fricción:
    migraciones en orden y después el historial de `supabase_migrations` queda
    desincronizado con el repositorio; solo como último recurso.
 
+## Despliegue desde CI (`.github/workflows/despliegue.yml`)
+
+Es la vía recomendada mientras el pooler de sesión no sea alcanzable desde el equipo, y
+también después: la contraseña vive en los secretos del repositorio y no vuelve a pasar
+por una terminal.
+
+### Preparar una sola vez
+
+1. Crear el entorno **`produccion`** en Settings → Environments. Si el plan permite
+   revisores obligatorios, declararlos: es lo que convierte el workflow en una puerta.
+   Si no los permite, la puerta efectiva es la confirmación escrita que pide el
+   formulario.
+
+2. Declarar estos secretos **en ese entorno**, no a nivel de repositorio:
+
+   | Secreto | De dónde sale |
+   |---|---|
+   | `SUPABASE_ACCESS_TOKEN` | Cuenta de Supabase → Access Tokens |
+   | `SUPABASE_DB_PASSWORD` | La contraseña de la base **recién rotada** |
+   | `SUPABASE_PROJECT_REF` | `vcgwfyhytzgyzicfbikf` |
+   | `VERCEL_TOKEN` | Cuenta de Vercel → Tokens |
+   | `VERCEL_ORG_ID` | `.local-backups/enlaces-remotos/vercel-project.json` → `orgId` |
+   | `VERCEL_PROJECT_ID` | el mismo archivo → `projectId` |
+
+### Usar
+
+Actions → «Despliegue a producción» → Run workflow, sobre la rama que se va a desplegar.
+
+- **`modo: ensayo`** (por omisión) respalda el esquema, lo adjunta como artefacto y
+  lista lo pendiente. No aplica nada. Conviene correrlo primero y leer el resumen.
+- **`modo: aplicar`** exige escribir `APLICAR EN PRODUCCION` en el campo de
+  confirmación. Respalda, aplica las migraciones, despliega el front y comprueba
+  `/api/health`. Si `db push` falla, el front no se despliega.
+- **`respaldar_datos`** queda en `false` a propósito: los artefactos los descarga
+  cualquiera con acceso de lectura al repositorio. Hoy los datos son sintéticos; el día
+  que dejen de serlo, ese volcado sería una filtración, no una copia de seguridad.
+
+El workflow **no** puede resolver la configuración de Auth ni la concesión de la
+autoridad global; lo recuerda en el resumen de cada ejecución.
+
 ## Comprobaciones posteriores
 
 - `npx supabase migration list --linked` muestra 38 aplicadas y ninguna pendiente.

@@ -1,0 +1,190 @@
+# Despliegue a producción: migraciones primero, front inmediatamente después.
+#
+# Existe por dos razones concretas.
+#
+# La primera es de red: desde el equipo de trabajo el pooler de sesión de Supabase
+# (puerto 5432) queda cortado por un intermediario de la salida a internet, así que
+# `supabase db push` no puede ejecutarse desde allí. Un runner de GitHub sale por otra
+# red y sí llega. La segunda es de higiene: la contraseña de la base vive en los
+# secretos del repositorio y no vuelve a pasar por una terminal ni por un chat.
+#
+# El orden está fijado a propósito. Las migraciones retiran firmas de RPC que el front
+# vivo todavía invoca —`submit_donation_intake_v2` pasa de dieciséis a diecisiete
+# parámetros, `create_shipment` de cinco a siete, `register_delivery` de cuatro a
+# cinco—, así que ninguno de los dos órdenes evita una ventana de incompatibilidad. Se
+# aplica la base y se despliega el front en el mismo trabajo, sin intervención humana
+# en medio, para que esa ventana dure lo que tarde el build y no lo que tarde alguien
+# en acordarse del segundo paso. Si `db push` falla, el front no se despliega.
+
+name: Despliegue a producción
+
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "ensayo = solo respalda y lista lo pendiente · aplicar = migra y despliega"
+        type: choice
+        options: [ensayo, aplicar]
+        default: ensayo
+      confirmacion:
+        description: "Para aplicar, escribe exactamente: APLICAR EN PRODUCCION"
+        type: string
+        default: ""
+      desplegar_front:
+        description: "Desplegar el front a producción después de migrar"
+        type: boolean
+        default: true
+      respaldar_datos:
+        description: "Adjuntar también un volcado de DATOS (ver aviso en el runbook)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Nunca cancelar un despliegue a medias: entre `db push` y el deploy del front el
+# sistema está en un estado incoherente y abandonarlo ahí es peor que terminarlo.
+concurrency:
+  group: despliegue-produccion
+  cancel-in-progress: false
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Requiere un entorno `produccion` en la configuración del repositorio. Ahí se
+    # declaran los revisores obligatorios y las ramas autorizadas: es lo que convierte
+    # este workflow en una puerta y no en un botón.
+    environment: produccion
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - name: Exigir la confirmación escrita para aplicar
+        if: inputs.modo == 'aplicar'
+        run: |
+          if [ "${{ inputs.confirmacion }}" != "APLICAR EN PRODUCCION" ]; then
+            echo "::error::Para aplicar hay que escribir la confirmación exacta. Nada se ha tocado."
+            exit 1
+          fi
+
+      - name: Comprobar que los secretos están declarados
+        run: |
+          faltan=""
+          for nombre in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
+            [ -n "${!nombre}" ] || faltan="$faltan $nombre"
+          done
+          if [ "${{ inputs.desplegar_front }}" = "true" ] && [ "${{ inputs.modo }}" = "aplicar" ]; then
+            for nombre in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+              [ -n "${!nombre}" ] || faltan="$faltan $nombre"
+            done
+          fi
+          if [ -n "$faltan" ]; then
+            echo "::error::Faltan secretos del entorno produccion:$faltan"
+            exit 1
+          fi
+
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias fijadas
+        run: npm ci
+
+      # Puerta rápida. La suite completa corre en «Verificación sandbox» sobre cada PR
+      # y sobre main; aquí solo se comprueba que lo que se va a desplegar compila y
+      # pasa las unitarias, para no gastar treinta minutos repitiendo lo ya verde.
+      - name: Puerta rápida antes de tocar producción
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run test
+
+      - name: Enlazar el proyecto remoto
+        run: npx supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Respaldar el esquema antes de migrar
+        run: |
+          mkdir -p respaldo
+          npx supabase db dump --linked -f "respaldo/esquema-$(date -u +%Y%m%dT%H%M%SZ).sql"
+          npx supabase db dump --linked --role-only -f "respaldo/roles-$(date -u +%Y%m%dT%H%M%SZ).sql"
+
+      # El volcado de DATOS no se adjunta por omisión, y no es un descuido: los
+      # artefactos los descarga cualquiera con acceso de lectura al repositorio. Hoy el
+      # entorno es G1 con datos sintéticos, pero el día que entren datos reales este
+      # paso pasaría de ser una copia de seguridad a ser una filtración. Se activa a
+      # mano y con conocimiento de causa.
+      - name: Respaldar los datos (solo si se pidió)
+        if: inputs.respaldar_datos
+        run: npx supabase db dump --linked --data-only -f "respaldo/datos-$(date -u +%Y%m%dT%H%M%SZ).sql"
+
+      - name: Conservar el respaldo
+        uses: actions/upload-artifact@v4
+        with:
+          name: respaldo-produccion-${{ github.run_id }}
+          path: respaldo/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Listar lo que está pendiente de aplicar
+        run: |
+          echo '## Migraciones antes de aplicar' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          npx supabase migration list --linked | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Aplicar las migraciones
+        if: inputs.modo == 'aplicar'
+        run: npx supabase db push --linked
+
+      - name: Comprobar que no queda nada pendiente
+        if: inputs.modo == 'aplicar'
+        run: |
+          echo '## Migraciones después de aplicar' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          npx supabase migration list --linked | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Desplegar el front a producción
+        if: inputs.modo == 'aplicar' && inputs.desplegar_front
+        run: |
+          npx vercel pull --yes --environment=production
+          npx vercel build --prod
+          url="$(npx vercel deploy --prebuilt --prod)"
+          echo "URL_PRODUCCION=$url" >> "$GITHUB_ENV"
+          echo "## Despliegue" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comprobar que el servicio responde
+        if: inputs.modo == 'aplicar' && inputs.desplegar_front
+        run: |
+          for intento in $(seq 1 10); do
+            codigo="$(curl -s -o /dev/null -w '%{http_code}' "$URL_PRODUCCION/api/health" || true)"
+            if [ "$codigo" = "200" ]; then
+              echo "Salud correcta en el intento $intento"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::El endpoint de salud no respondió 200. Las migraciones YA están aplicadas: revisar el despliegue antes de reintentar."
+          exit 1
+
+      - name: Recordatorios que este workflow no puede resolver
+        if: inputs.modo == 'aplicar'
+        run: |
+          {
+            echo '## Pendiente de hacer a mano'
+            echo '- Auth en el panel: habilitar registro y exigir confirmación de correo. `db push` no toca la configuración de Auth, y `supabase config push` NO sirve aquí porque `config.toml` declara `site_url` en localhost.'
+            echo '- Conceder la autoridad global con `select public.grant_super_admin(...)` desde el editor SQL: no hay vía desde la aplicación (ADR-011).'
+            echo '- Repetir el arnés de simulación remota para cerrar `G-022` globalmente.'
+          } >> "$GITHUB_STEP_SUMMARY"
