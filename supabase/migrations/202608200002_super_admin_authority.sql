@@ -269,10 +269,9 @@ create trigger organizations_audit
   after insert or update or delete on public.organizations
   for each row execute function public.audit_row_change('with_values');
 
-drop trigger if exists catalog_versions_audit on public.catalog_versions;
-create trigger catalog_versions_audit
-  after insert or update or delete on public.catalog_versions
-  for each row execute function public.audit_row_change('with_values');
+-- `catalog_versions` no lleva disparador a proposito: su unico escritor es
+-- `manage_catalog_values`, que ya deja un registro completo —motivo, versiones, antes y
+-- despues emparejados—. Anadirlo guardaria el mismo `values_json` dos veces.
 
 -- ---------------------------------------------------------------------------
 -- Concesion de SUPER_ADMIN: operacion privilegiada, nunca desde el cliente.
@@ -286,6 +285,49 @@ create trigger catalog_versions_audit
 --   3. conceder `super_admin` solo es posible por esta funcion, revocada para `anon` y
 --      `authenticated`, que solo alcanza `service_role`.
 -- El JWT no interviene: el rol se lee de la tabla, no de un claim manipulable.
+-- La escritura directa de una membresia SUPER_ADMIN queda cerrada por disparador.
+-- `202608160004` concede INSERT y UPDATE sobre `memberships` a `service_role` para el
+-- arranque en frio, asi que sin esta guardia la autoridad global podia escribirse a mano,
+-- sin motivo, sin actor y sin auditoria: la via sancionada habria sido la dificil y la
+-- silenciosa la facil.
+create or replace function public.assert_super_admin_grant_path()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  -- La marca es local a la transaccion y solo la ponen `grant_super_admin` y
+  -- `revoke_super_admin`. Cualquier otra ruta —incluida una escritura directa con
+  -- `service_role`, que tiene INSERT y UPDATE sobre esta tabla— queda bloqueada.
+  if coalesce(current_setting('app.super_admin_grant', true), '') = 'on' then
+    return new;
+  end if;
+  -- El orden importa para que cada mensaje diga la verdad: alterar una membresia que ya
+  -- es SUPER_ADMIN no es «concederla», y con la comprobacion al reves ese caso caia
+  -- siempre en el primer mensaje.
+  if tg_op = 'UPDATE' and old.role = 'super_admin' then
+    raise exception using
+      errcode = '42501',
+      message = 'La membresia SUPER_ADMIN no se modifica por escritura directa';
+  end if;
+  if new.role = 'super_admin' then
+    raise exception using
+      errcode = '42501',
+      message = 'SUPER_ADMIN solo se concede o revoca con grant_super_admin() / revoke_super_admin()';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists memberships_super_admin_guard on public.memberships;
+create trigger memberships_super_admin_guard
+  before insert or update on public.memberships
+  for each row execute function public.assert_super_admin_grant_path();
+
+comment on function public.assert_super_admin_grant_path() is
+  'Impide escribir o alterar una membresia SUPER_ADMIN fuera de grant_super_admin()/revoke_super_admin(). Cierra la via directa que service_role tenia por sus privilegios de arranque en frio.';
+
 create or replace function public.grant_super_admin(
   p_email text,
   p_organization_id uuid,
@@ -309,11 +351,13 @@ begin
     raise exception using errcode = 'P0002', message = 'No existe una cuenta con ese correo';
   end if;
 
+  perform set_config('app.super_admin_grant', 'on', true);
   insert into public.memberships(user_id, organization_id, event_id, role, active)
   values (target_user, p_organization_id, p_event_id, 'super_admin', true)
   on conflict on constraint memberships_user_id_organization_id_event_id_role_key
   do update set active = true
   returning id into membership_id;
+  perform set_config('app.super_admin_grant', '', true);
 
   insert into public.audit_events(event_id, organization_id, actor_id, action, entity_table, entity_id, metadata)
   values (
@@ -336,10 +380,12 @@ begin
   if char_length(btrim(coalesce(p_reason, ''))) < 10 then
     raise exception using errcode = '22023', message = 'Registra el motivo de la revocacion';
   end if;
+  perform set_config('app.super_admin_grant', 'on', true);
   update public.memberships
   set active = false
   where user_id = p_user_id and role = 'super_admin' and active;
   get diagnostics revoked = row_count;
+  perform set_config('app.super_admin_grant', '', true);
 
   insert into public.audit_events(actor_id, action, entity_table, entity_id, metadata)
   values ((select auth.uid()), 'revoke_super_admin', 'memberships', null,
@@ -350,10 +396,15 @@ $$;
 
 revoke all on function public.grant_super_admin(text, uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.revoke_super_admin(uuid, text) from public, anon, authenticated;
+-- Sin esta concesion la operacion privilegiada no era alcanzable por nadie salvo el
+-- superusuario, y quien administra el entorno terminaba escribiendo la fila a mano.
+grant execute on function public.grant_super_admin(text, uuid, uuid, text) to service_role;
+grant execute on function public.revoke_super_admin(uuid, text) to service_role;
+
 comment on function public.grant_super_admin(text, uuid, uuid, text) is
-  'Concede SUPER_ADMIN. Operacion privilegiada y auditada: revocada para anon y authenticated, solo alcanzable con service_role.';
+  'Unica via para conceder SUPER_ADMIN. Revocada para anon y authenticated, concedida a service_role, y obligada por el disparador de memberships: la escritura directa de esa fila esta bloqueada aunque se tengan privilegios de tabla.';
 comment on function public.revoke_super_admin(uuid, text) is
-  'Revoca SUPER_ADMIN desactivando la membresia sin borrarla. Misma restriccion de acceso que la concesion.';
+  'Unica via para revocar SUPER_ADMIN. Desactiva la membresia sin borrarla, con motivo y auditoria.';
 
 -- ---------------------------------------------------------------------------
 -- Administracion de usuarios y roles desde la consola global.
@@ -475,6 +526,7 @@ set search_path = ''
 as $$
 declare
   organization_id uuid;
+  normalized_slug text;
 begin
   if not public.is_super_admin() then
     raise exception using errcode = '42501', message = 'Solo SUPER_ADMIN administra organizaciones';
@@ -484,14 +536,33 @@ begin
   end if;
 
   if p_organization_id is null then
+    if char_length(btrim(coalesce(p_name, ''))) < 2 then
+      raise exception using errcode = '22023', message = 'La organizacion necesita un nombre';
+    end if;
+    normalized_slug := lower(btrim(coalesce(p_slug, '')));
+    if normalized_slug !~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' then
+      raise exception using errcode = '22023',
+        message = 'El identificador debe ser minusculas, numeros y guiones simples';
+    end if;
+    if exists (select 1 from public.organizations as taken where taken.slug = normalized_slug) then
+      raise exception using errcode = '22023', message = 'Ese identificador ya esta en uso';
+    end if;
     insert into public.organizations(name, slug, status, verified)
-    values (btrim(p_name), lower(btrim(p_slug)), coalesce(p_status, 'active'), coalesce(p_verified, false))
+    values (btrim(p_name), normalized_slug, coalesce(p_status, 'active'), coalesce(p_verified, false))
     returning id into organization_id;
   else
-    -- Se suspende, no se borra: una organizacion con historial no puede desaparecer sin
-    -- dejar huerfanos sus aportes, sus puntos y su trazabilidad.
+    -- El `slug` no se toca: es el identificador con el que la organizacion aparece en
+    -- proyecciones publicas y enlaces ya emitidos. Renombrarlo desde aqui romperia
+    -- referencias que este modulo no puede ver. Y se suspende en vez de borrar, porque una
+    -- organizacion con historial no puede desaparecer sin dejar huerfanos sus aportes.
+    if p_slug is not null and lower(btrim(p_slug)) is distinct from (
+      select organization.slug from public.organizations as organization where organization.id = p_organization_id
+    ) then
+      raise exception using errcode = '22023',
+        message = 'El identificador publico de una organizacion existente no se cambia';
+    end if;
     update public.organizations
-    set name = coalesce(btrim(p_name), name),
+    set name = coalesce(nullif(btrim(p_name), ''), name),
         status = coalesce(p_status, status),
         verified = coalesce(p_verified, verified)
     where id = p_organization_id
@@ -506,6 +577,8 @@ $$;
 
 revoke all on function public.manage_organization(uuid, text, text, text, boolean) from public, anon, authenticated;
 grant execute on function public.manage_organization(uuid, text, text, text, boolean) to authenticated;
+comment on function public.manage_organization(uuid, text, text, text, boolean) is
+  'Alta y edicion de organizaciones desde la parametrizacion. El identificador publico es inmutable y la baja es suspension, no borrado.';
 
 -- Catalogos parametrizables. La lista blanca es deliberada: quedan fuera los catalogos
 -- que no son datos sino contrato. `declared_donation_statuses` alimenta el mapeo a los
@@ -702,8 +775,6 @@ revoke all on function public.platform_audit_admin(uuid, integer) from public, a
 grant execute on function public.platform_users_admin(uuid) to authenticated;
 grant execute on function public.platform_audit_admin(uuid, integer) to authenticated;
 
-comment on function public.manage_organization(uuid, text, text, text, boolean) is
-  'Alta y edicion de organizaciones desde la parametrizacion; suspende en vez de borrar cuando hay historial.';
 comment on function public.parameterizable_catalogs() is
   'Catalogos que son datos y no contrato. Los que alimentan invariantes (estados declarados, DIVIPOLA) quedan deliberadamente fuera.';
 comment on function public.manage_catalog_values(text, jsonb, text) is

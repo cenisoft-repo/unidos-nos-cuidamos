@@ -1,7 +1,7 @@
 # Estado actual
 
 - Puerta/hito: G1 publicada como sandbox sintético interno; G2/G3 bloqueadas y no deben incorporarse operadores/PII antes de verificar en remoto el cierre local de `G-022`.
-- Último resultado comprobado: **`npm run verify` verde de extremo a extremo** sobre `integration/superadmin-consolidacion` con **38 migraciones** — preflight, lint, typecheck, 47/47 unitarias, 359/359 pgTAP en cinco archivos, RLS (anonimato, tenant, escalamiento y alcance global), dos pruebas de concurrencia (aporte y reserva), build y 44/44 Playwright web/móvil. Además `audit:a11y` sin problemas en 14 superficies y `audit:visual` con 70 mediciones y cero desbordes.
+- Último resultado comprobado: **`npm run verify` verde de extremo a extremo** sobre `integration/superadmin-consolidacion` con **38 migraciones** — preflight, lint, typecheck, 47/47 unitarias, 372/372 pgTAP en cinco archivos, RLS (anonimato, tenant, escalamiento y alcance global), dos pruebas de concurrencia (aporte y reserva), build y 44/44 Playwright web/móvil. Además `audit:a11y` sin problemas en 14 superficies y `audit:visual` con 70 mediciones y cero desbordes.
 - **Remoto: 28 migraciones (hasta `202608170007`). Las diez de esta línea NO están aplicadas allí.** Comprobar siempre contra `supabase migration list --linked`, no contra esta memoria: ya hubo una vez en que este dato estaba vencido y se creyó que `G-030` no había llegado a producción cuando sí estaba viva.
 - Recorrido activo local/remoto: portal, reportes, aportes en especie/dinero con catálogos versionados y centro compatible, QR de seguimiento, operación, tesorería, mapas, dashboards y exportaciones con datos sintéticos. El registro de aporte usa un recorrido adaptativo de cuatro pasos en especie y tres en dinero.
 - Hallazgos: A15-001 a A15-008 cerrados para G1. Cerradas `G-021`, `G-023`, `G-024`, `G-025`, `G-028`, `G-029`, `G-030` (globalmente, verificada en producción), `G-032`, `G-033`, y en esta sesión `G-034` a `G-038` (las de la consolidación, ya ejecutadas), `G-040` (concurrencia de reserva), `G-041` (recepción con faltante) y `G-042` (SUPER_ADMIN y parametrización). `G-039` queda **cerrada solo en el modelo**: el autorregistro ya no escribe `verified`, pero la verificación documental depende de `G-003`. `G-022` tiene su migración aplicada en remoto; falta repetir allí el arnés. En la pista visual: `DQ-01`, `DQ-04` y `DQ-05` cerradas; `DQ-06` mitigada. **Abiertas:** `G-031` P2 (tensión de tenant), `G-026/G-027` P2, `G-043` P2 (antes/después solo en las tablas del parametrizador), `G-015` P2, `G-017` P2 y `G-001` a `G-008` P2 (decisiones humanas). `docs/GAP_LEDGER.md` y `docs/ai/DESIGN_QUALITY.md` son la fuente.
@@ -46,6 +46,13 @@
   contra 25 disponibles, y recepción con faltante donde el historial conserva lo despachado.
 - **Limpieza:** se retira `submit_donation_intake_v2_catalogs_v1`, sin llamadores desde que la
   Fase 4 sustituyó el envoltorio.
+- **Pasada de revisión sobre lo propio, y valió la pena.** Auditar los privilegios reales de
+  cada función nueva destapó que `grant_super_admin` no era ejecutable por `service_role`: la
+  vía auditada era código muerto mientras la escritura directa de la fila seguía abierta por
+  los privilegios de arranque en frío. Lección repetible: cuando un comentario afirma quién
+  puede ejecutar algo, comprobarlo contra `proacl`, no contra la intención. Y una `revoke all
+  ... from public, anon, authenticated` no deja la función «solo para service_role»: la deja
+  sin dueño.
 - Evidencia: 359/359 pgTAP, RLS, dos concurrencias, 44/44 Playwright, a11y 0 problemas en 14
   superficies, visual 70 mediciones sin desbordes.
 

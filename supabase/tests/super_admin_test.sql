@@ -4,7 +4,7 @@
 -- que el alcance global exista, que NO sea un bypass, que nadie pueda escalar su
 -- propio rol y que cada cambio administrativo quede con su antes y su despues.
 begin;
-select plan(52);
+select plan(65);
 
 -- ------------------------------------------------------------- el rol existe --
 select ok(
@@ -75,6 +75,44 @@ select ok(
 select ok(
   not has_function_privilege('authenticated','public.revoke_super_admin(uuid,text)','EXECUTE'),
   'La revocacion de SUPER_ADMIN tampoco se expone al cliente'
+);
+select ok(
+  has_function_privilege('service_role','public.grant_super_admin(text,uuid,uuid,text)','EXECUTE'),
+  'La operacion privilegiada si es alcanzable por quien administra el entorno'
+);
+select ok(
+  has_function_privilege('service_role','public.revoke_super_admin(uuid,text)','EXECUTE'),
+  'La revocacion privilegiada tambien lo es'
+);
+-- Y la via silenciosa queda cerrada: `service_role` tiene INSERT y UPDATE sobre
+-- `memberships` por el arranque en frio, asi que sin este disparador podia escribirse
+-- la autoridad global a mano, sin motivo, sin actor y sin auditoria.
+select throws_ok(
+  $$insert into public.memberships(user_id, organization_id, event_id, role, active)
+    values ('00000000-0000-0000-0000-000000000103','20000000-0000-0000-0000-000000000001',
+            '10000000-0000-0000-0000-000000000001','super_admin', true)$$,
+  '42501',
+  'SUPER_ADMIN solo se concede o revoca con grant_super_admin() / revoke_super_admin()',
+  'La autoridad global no se escribe directamente sobre la tabla'
+);
+select throws_ok(
+  $$update public.memberships set active = false
+    where user_id = '00000000-0000-0000-0000-000000000106' and role = 'super_admin'$$,
+  '42501',
+  'La membresia SUPER_ADMIN no se modifica por escritura directa',
+  'Tampoco se altera la que ya existe'
+);
+select lives_ok(
+  $$insert into public.memberships(user_id, organization_id, event_id, role, active)
+    values ('00000000-0000-0000-0000-000000000105','20000000-0000-0000-0000-000000000002',
+            '10000000-0000-0000-0000-000000000001','auditor', true)$$,
+  'El disparador no estorba a los demas roles'
+);
+select is(
+  (select count(*)::integer from public.audit_events
+   where action = 'grant_super_admin' and metadata ->> 'via' = 'operacion_privilegiada'),
+  1,
+  'La unica autoridad global del entorno se concedio por la via auditada'
 );
 select is(
   (select count(*)::integer from pg_catalog.pg_policies
@@ -251,6 +289,12 @@ select ok(
   ),
   'La parametrizacion de un catalogo deja el antes y el despues'
 );
+select is(
+  (select count(*)::integer from public.audit_events
+   where entity_table in ('catalogs','catalog_versions')),
+  1,
+  'Un cambio de catalogo deja un registro, no el mismo JSON repetido en tres'
+);
 select ok(
   (select count(*) from public.platform_audit_admin('10000000-0000-0000-0000-000000000001', 100)) >= 3,
   'La consola de auditoria muestra los cambios administrativos'
@@ -345,6 +389,47 @@ select throws_ok(
   '42501',
   'No puedes decidir la verificacion de esta organizacion',
   'El aliado no verifica organizaciones ajenas'
+);
+
+-- --------------------------------------- identificador publico de una organizacion --
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000106","role":"authenticated"}',true);
+select throws_ok(
+  $$select public.manage_organization(null,'Organizacion de prueba','Con Mayusculas Y Espacios','active',false)$$,
+  '22023',
+  'El identificador debe ser minusculas, numeros y guiones simples',
+  'El identificador publico se valida antes de llegar a la restriccion de la tabla'
+);
+select throws_ok(
+  $$select public.manage_organization(null,'Organizacion de prueba','aliados-unidos-demo','active',false)$$,
+  '22023',
+  'Ese identificador ya esta en uso',
+  'Dos organizaciones no pueden compartir identificador publico'
+);
+select ok(
+  public.manage_organization(null,'Organizacion de prueba','organizacion-de-prueba','active',false) is not null,
+  'La autoridad global da de alta una organizacion nueva'
+);
+select throws_ok(
+  $$select public.manage_organization(
+      '20000000-0000-0000-0000-000000000002','Aliados Unidos Demo','otro-identificador','active',true)$$,
+  '22023',
+  'El identificador publico de una organizacion existente no se cambia',
+  'Renombrar el identificador romperia enlaces ya emitidos, asi que no se permite'
+);
+create temporary table suspended_organization as
+select public.manage_organization(
+  '20000000-0000-0000-0000-000000000002', null, null, 'suspended', null) as id;
+select is(
+  (select organization.status from public.organizations as organization
+   where organization.id = (select id from suspended_organization)),
+  'suspended',
+  'La baja de una organizacion con historial es una suspension, no un borrado'
+);
+select is(
+  (select count(*)::integer from public.organizations
+   where id = '20000000-0000-0000-0000-000000000002'),
+  1,
+  'La organizacion suspendida sigue existiendo con su historial'
 );
 
 select * from finish();

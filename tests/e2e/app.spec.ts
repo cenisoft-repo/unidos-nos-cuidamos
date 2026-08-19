@@ -398,7 +398,13 @@ async function entrarComo(page: import("@playwright/test").Page, correo: string,
   await page.getByLabel("Correo").fill(correo);
   await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
   await page.getByRole("button", { name: "Ingresar", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${destino.replace("/", "\/")}$`));
+  /*
+   * Esperar por la ruta y no por una expresión sobre la URL: `/ingresar?next=/operaciones`
+   * también termina en «/operaciones», así que una comprobación de sufijo se cumple antes
+   * de que la acción de servidor haya escrito la cookie y deja pasar navegaciones sin
+   * sesión. `waitForURL` con `pathname` exacto y sin query no admite ese falso positivo.
+   */
+  await page.waitForURL((url) => url.pathname === destino && !url.search, { timeout: 20_000 });
 }
 
 test("aliado responde una observación y el aporte vuelve a verificación", async ({ page }) => {

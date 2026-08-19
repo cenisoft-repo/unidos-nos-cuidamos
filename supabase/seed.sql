@@ -41,11 +41,18 @@ insert into public.memberships(user_id,organization_id,event_id,role) values
 ('00000000-0000-0000-0000-000000000103','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','warehouse_operator'),
 ('00000000-0000-0000-0000-000000000103','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','logistics_operator'),
 ('00000000-0000-0000-0000-000000000104','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_requester'),
-('00000000-0000-0000-0000-000000000105','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_approver'),
--- SUPER_ADMIN. La organizacion y el evento de esta fila no acotan nada: el alcance
--- global lo declara el rol, no la fila. Se siembra directamente porque `grant_super_admin`
--- es una operacion privilegiada y el seed corre con privilegios de mantenimiento.
-('00000000-0000-0000-0000-000000000106','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','super_admin');
+('00000000-0000-0000-0000-000000000105','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_approver');
+
+-- SUPER_ADMIN se siembra por la misma operación privilegiada que lo concede en cualquier
+-- entorno, no con un insert a mano: la escritura directa de esa fila está bloqueada por
+-- `assert_super_admin_grant_path`, así que el sandbox ejercita el camino real. La
+-- organización y el evento de la fila no acotan nada; el alcance lo declara el rol.
+select public.grant_super_admin(
+  'superadmin@rutasolidaria.local',
+  '20000000-0000-0000-0000-000000000001',
+  '10000000-0000-0000-0000-000000000001',
+  'Siembra del sandbox local para el recorrido de parametrización'
+);
 
 -- Promueve los aliados de referencia a organizaciones operativas con su punto de acopio.
 -- Misma función que usa la migración; aquí se ejecuta con el evento y las membresías ya

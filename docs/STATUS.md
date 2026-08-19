@@ -18,7 +18,7 @@ conserva 28 migraciones (hasta `202608170007`).
 | `preflight:local` | ok · sin enlaces activos a proyectos remotos |
 | Lint · TypeScript · build | verdes |
 | Unitarias (Vitest) | 47/47 |
-| SQL (pgTAP) | 359/359 sobre 38 migraciones, en cinco archivos |
+| SQL (pgTAP) | 372/372 sobre 38 migraciones, en cinco archivos |
 | RLS (`verify-rls.mjs`) | ok · anonimato, aislamiento de tenant, escalamiento bloqueado y alcance global |
 | Concurrencia de aporte | ok · doble envío produce un solo aporte |
 | Concurrencia de reserva | ok · 25 disponibles, dos reservas de 20 a la vez, una sola completa |
@@ -93,6 +93,28 @@ toda columna `_private`, porque copiarlas convertiría el registro en una fuga (
 Quedan fuera de lo parametrizable los catálogos que son contrato: los estados
 declarados alimentan el mapeo de estados operativos dentro de la RPC de aporte, y los
 departamentos son referencia DIVIPOLA.
+
+**Pasada de revisión sobre lo entregado.** Antes de darlo por cerrado se auditaron los
+privilegios reales de cada función nueva, y dos cosas estaban dichas pero no hechas:
+
+- `grant_super_admin` afirmaba en su comentario ser «alcanzable con `service_role`» y no
+  lo era. Al revocarla de `public`, `anon` y `authenticated` quedó sin ninguna concesión
+  explícita, de modo que solo la ejecutaba el superusuario: la función auditada era código
+  muerto. Y lo que `service_role` sí podía hacer era peor —`202608160004` le concede INSERT
+  y UPDATE sobre `memberships` para el arranque en frío, así que podía escribirse la
+  autoridad global a mano, sin motivo, sin actor y sin auditoría. La vía sancionada estaba
+  cerrada y la silenciosa abierta. Se corrigen las dos mitades: la función se concede a
+  `service_role` y un disparador bloquea escribir o alterar una fila `super_admin` fuera de
+  ella. `seed.sql` la siembra por esa misma vía, así que cada `db:reset` ejercita el camino
+  real.
+- Cada cambio de catálogo dejaba tres registros de auditoría y guardaba `values_json` dos
+  veces. Se conserva el registro de negocio —el único que empareja el antes con el después
+  y trae el motivo y las versiones— y se retira el disparador de tabla, porque
+  `catalog_versions` no tiene más escritor que esa función.
+
+También se corrigió el ayudante de sesión de la suite E2E, que esperaba con una expresión
+de sufijo sobre la URL: `/ingresar?next=/operaciones` ya la satisface, así que la espera se
+cumplía antes de que existiera cookie. Es el mismo defecto que había en la prueba de AYUDAR.
 
 **`G-039` · P2 — confirmar un correo no es verificar una organización.** El
 autorregistro escribía `organization_verifications.state = 'verified'` en cuanto la
