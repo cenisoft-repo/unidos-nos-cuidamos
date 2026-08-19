@@ -548,6 +548,10 @@ h3 { font-size: 20px; margin-bottom: 9px; }
 .delivery-purpose-fieldset > .form-check:last-of-type { margin-bottom: 2px; }
 .delivery-category-fieldset { margin: 15px 0 4px; padding: 0; border: 0; }
 .delivery-category-fieldset legend { margin-bottom: 8px; font-size: 12px; font-weight: 800; }
+.lot-position { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 14px 20px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
+.lot-position div { display: grid; gap: 2px; min-width: 0; }
+.lot-position dt { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.lot-position dd { margin: 0; font-size: 12px; font-weight: 700; }
 .ops-inline-warning { margin: 9px 0 0; color: #742d26; font-size: 11px; font-weight: 700; }
 .ops-inline-warning a { color: inherit; }
 .ops-inline-note { display: flex; align-items: center; gap: 6px; margin: 9px 0 0; color: var(--muted); font-size: 11px; font-weight: 650; }

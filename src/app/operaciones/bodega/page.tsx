@@ -25,14 +25,16 @@ export default async function WarehousePage() {
   const results = await Promise.all([
     supabase.from("donation_items").select("id,category,description,quantity_promised,quantity_received,quantity_rejected,unit,donations!inner(donor_tracking_code,status,organization_id,event_id)").eq("donations.event_id", EVENT_ID).order("created_at"),
     supabase.from("inventory_locations").select("id,name,organization_id,accepts_donations,dispatches_shipments").eq("event_id", EVENT_ID).eq("active", true),
-    supabase.from("inventory_lots").select("id,lot_code,category,status,quantity_initial,unit,organization_id").eq("event_id", EVENT_ID).order("created_at", { ascending: false }),
+    // La posición del lote sale del Kardex, no del saldo con el que nació.
+    supabase.from("inventory_lot_positions").select("lot_id,lot_code,category,unit,status,organization_id,location_id,quantity_physical,quantity_available,quantity_reserved,quantity_in_transit,quantity_delivered").eq("event_id", EVENT_ID).order("lot_code"),
     supabase.from("need_items").select("id,category,quantity_required,quantity_covered,unit,need_cases!inner(public_location_text,status,event_id)").eq("need_cases.event_id", EVENT_ID).order("created_at"),
-    supabase.from("allocations").select("id,quantity,status,organization_id,inventory_lots(lot_code,category,unit),need_items(category,need_cases(public_location_text))").eq("event_id", EVENT_ID).order("created_at", { ascending: false }),
-    supabase.from("shipments").select("id,shipment_code,status,public_destination,origin_location_id,shipment_items(quantity)").eq("event_id", EVENT_ID).order("created_at", { ascending: false }),
-    supabase.from("deliveries").select("id,status,quantity_delivered,quantity_damaged,shipments!inner(shipment_code,event_id)").eq("shipments.event_id", EVENT_ID).order("created_at", { ascending: false }),
+    supabase.from("allocations").select("id,quantity,status,organization_id,transfer_request_id,inventory_lots(lot_code,category,unit),need_items(category,need_cases(public_location_text))").eq("event_id", EVENT_ID).order("created_at", { ascending: false }),
+    supabase.from("shipments").select("id,shipment_code,status,public_destination,origin_location_id,destination_location_id,transfer_request_id,transport_mode,transport_plate,shipment_items(quantity)").eq("event_id", EVENT_ID).order("created_at", { ascending: false }),
+    supabase.from("deliveries").select("id,status,quantity_delivered,quantity_damaged,quantity_missing,shipments!inner(shipment_code,event_id)").eq("shipments.event_id", EVENT_ID).order("created_at", { ascending: false }),
+    supabase.from("transfer_requests").select("id,request_code,status,category,unit,quantity_requested,quantity_authorized,justification,origin_location_id,destination_location_id,requested_by").eq("event_id", EVENT_ID).order("requested_at", { ascending: false }),
   ]);
   assertSupabaseSuccess("bodega", results);
-  const [itemsResult, locationsResult, lotsResult, needsResult, allocationsResult, shipmentsResult, deliveriesResult] = results;
+  const [itemsResult, locationsResult, lotsResult, needsResult, allocationsResult, shipmentsResult, deliveriesResult, transfersResult] = results;
   const items = (itemsResult.data ?? []).filter((item) => Number(item.quantity_received) + Number(item.quantity_rejected) < Number(item.quantity_promised));
 
   return (
@@ -41,12 +43,14 @@ export default async function WarehousePage() {
       <WarehouseConsole
         promiseItems={items as never[]}
         locations={(locationsResult.data ?? []) as never[]}
-        lots={(lotsResult.data ?? []) as never[]}
+        lotPositions={(lotsResult.data ?? []) as never[]}
         needItems={(needsResult.data ?? []) as never[]}
         allocations={(allocationsResult.data ?? []) as never[]}
         shipments={(shipmentsResult.data ?? []) as never[]}
         deliveries={(deliveriesResult.data ?? []) as never[]}
+        transferRequests={(transfersResult.data ?? []) as never[]}
         canValidate={roles.has("verifier") || roles.has("event_admin")}
+        userId={user.id}
       />
     </div>
   );

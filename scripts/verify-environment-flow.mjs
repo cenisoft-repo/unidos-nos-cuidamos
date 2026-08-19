@@ -217,8 +217,14 @@ if (receptionOnly) {
   record(
     "Un punto que solo recibe no puede usarse como origen",
     denied(await warehouse.rpc("create_shipment", {
-      p_allocation_id: allocationId, p_origin_location_id: receptionOnly.id,
-      p_public_destination: `Zona de ensayo ${runId}`, p_carrier_name: "", p_idempotency_key: `${runId}-badorigin`,
+      p_allocation_id: allocationId, p_transfer_request_id: null,
+      p_origin_location_id: receptionOnly.id, p_destination_location_id: null,
+      p_public_destination: `Zona de ensayo ${runId}`, p_transport: {
+    mode: "transportadora", company: `Transportes de ensayo ${runId}`,
+    contact_name: `Conductor ${runId}`, contact_document: `CC-${runId}`,
+    contact_phone: "6040000000", vehicle: "Camión sencillo",
+    plate: "ABC123", responsible: `Responsable ${runId}`,
+  }, p_idempotency_key: `${runId}-badorigin`,
     })),
   );
 } else {
@@ -228,35 +234,59 @@ if (receptionOnly) {
 record(
   "El destino público rechaza teléfonos, cuentas y enlaces",
   denied(await warehouse.rpc("create_shipment", {
-    p_allocation_id: allocationId, p_origin_location_id: origin.id,
-    p_public_destination: "Entregar y llamar al 3001234567", p_carrier_name: "", p_idempotency_key: `${runId}-baddestination`,
+    p_allocation_id: allocationId, p_transfer_request_id: null,
+    p_origin_location_id: origin.id, p_destination_location_id: null,
+    p_public_destination: "Entregar y llamar al 3001234567", p_transport: {
+    mode: "transportadora", company: `Transportes de ensayo ${runId}`,
+    contact_name: `Conductor ${runId}`, contact_document: `CC-${runId}`,
+    contact_phone: "6040000000", vehicle: "Camión sencillo",
+    plate: "ABC123", responsible: `Responsable ${runId}`,
+  }, p_idempotency_key: `${runId}-baddestination`,
   })),
 );
 
 const shipmentKey = `${runId}-shipment`;
+// Fase 12: un despacho puede prepararse sin saber quién lo lleva, pero no puede salir sin saberlo.
 const shipmentId = value("despacho", await warehouse.rpc("create_shipment", {
-  p_allocation_id: allocationId, p_origin_location_id: origin.id,
-  p_public_destination: `Zona de ensayo ${runId}`, p_carrier_name: `Transporte de ensayo ${runId}`, p_idempotency_key: shipmentKey,
+  p_allocation_id: allocationId, p_transfer_request_id: null,
+  p_origin_location_id: origin.id, p_destination_location_id: null,
+  p_public_destination: `Zona de ensayo ${runId}`, p_transport: {}, p_idempotency_key: shipmentKey,
+}));
+record("Un despacho sin datos de transporte no puede salir", denied(await warehouse.rpc("dispatch_shipment", { p_shipment_id: shipmentId })));
+value("transporte del despacho", await warehouse.rpc("set_shipment_transport", {
+  p_shipment_id: shipmentId, p_transport: {
+    mode: "transportadora", company: `Transportes de ensayo ${runId}`,
+    contact_name: `Conductor ${runId}`, contact_document: `CC-${runId}`,
+    contact_phone: "6040000000", vehicle: "Camión sencillo",
+    plate: "ABC123", responsible: `Responsable ${runId}`,
+  },
 }));
 const repeatedShipmentId = value("reintento de despacho", await warehouse.rpc("create_shipment", {
-  p_allocation_id: allocationId, p_origin_location_id: origin.id,
-  p_public_destination: `Zona de ensayo ${runId}`, p_carrier_name: `Transporte de ensayo ${runId}`, p_idempotency_key: shipmentKey,
+  p_allocation_id: allocationId, p_transfer_request_id: null,
+  p_origin_location_id: origin.id, p_destination_location_id: null,
+  p_public_destination: `Zona de ensayo ${runId}`, p_transport: {}, p_idempotency_key: shipmentKey,
 }));
 record("El despacho queda con origen registrado y el reintento es idempotente", Boolean(shipmentId) && shipmentId === repeatedShipmentId);
 
-const shipmentRow = value("origen del despacho", await warehouse.from("shipments").select("origin_location_id,carrier_name,public_destination").eq("id", shipmentId).single());
+const shipmentRow = value("origen del despacho", await warehouse.from("shipments").select("origin_location_id,status,transport_plate,public_destination").eq("id", shipmentId).single());
 record("El despacho conserva desde dónde salió", shipmentRow.origin_location_id === origin.id);
-record("El transportador no viaja a la superficie pública", !("carrier_name" in (value("proyección logística", await anon.from("public_logistics_projections").select("*").eq("source_id", shipmentId).maybeSingle()) ?? {})));
+record("El despacho nace en preparación y no en movimiento", shipmentRow.status === "preparing");
+record("La salida física exige el transporte completo", value("salida", await warehouse.rpc("dispatch_shipment", { p_shipment_id: shipmentId })) === "dispatched");
+record("El seguimiento avanza a EN MOVIMIENTO", value("movimiento", await warehouse.rpc("advance_shipment", { p_shipment_id: shipmentId, p_next_state: "in_transit" })) === "in_transit");
+record("El seguimiento registra la llegada", value("llegada", await warehouse.rpc("advance_shipment", { p_shipment_id: shipmentId, p_next_state: "arrived" })) === "arrived");
+record("El transportador no viaja a la superficie pública", !("transport_plate" in (value("proyección logística", await anon.from("public_logistics_projections").select("*").eq("source_id", shipmentId).maybeSingle()) ?? {})));
 
 // ---------------------------------------------------------------- entrega
 
 record(
   "La entrega debe conciliar con lo despachado",
-  denied(await warehouse.rpc("register_delivery", { p_shipment_id: shipmentId, p_quantity_delivered: 3, p_quantity_damaged: 0, p_idempotency_key: `${runId}-baddelivery` })),
+  denied(await warehouse.rpc("register_delivery", { p_shipment_id: shipmentId, p_quantity_delivered: 3, p_quantity_damaged: 0, p_quantity_missing: 0, p_idempotency_key: `${runId}-baddelivery` })),
 );
 const deliveryId = value("entrega", await warehouse.rpc("register_delivery", {
-  p_shipment_id: shipmentId, p_quantity_delivered: 10, p_quantity_damaged: 0, p_idempotency_key: `${runId}-delivery`,
+  p_shipment_id: shipmentId, p_quantity_delivered: 10, p_quantity_damaged: 0, p_quantity_missing: 0, p_idempotency_key: `${runId}-delivery`,
 }));
+const reconciliation = value("conciliación", await warehouse.rpc("shipment_reconciliation", { p_shipment_id: shipmentId }));
+record("La conciliación declara CONFORME cuando lo recibido cuadra", (Array.isArray(reconciliation) ? reconciliation[0] : reconciliation)?.outcome === "CONFORME");
 record("Se registra la entrega conciliada con el despacho", Boolean(deliveryId));
 record(
   "Quien entrega no puede validar su propia entrega",
