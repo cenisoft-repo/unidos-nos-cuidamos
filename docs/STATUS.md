@@ -4,10 +4,11 @@ Fecha: 2026-08-18 · Puerta: **G1**, sandbox con datos 100 % sintéticos.
 G2 y G3 siguen bloqueadas: no deben incorporarse operadores, PII, dinero ni
 comunicación institucional.
 
-Esta línea es `integration/superadmin-consolidacion`: la entrega de despacho,
-trazabilidad y tesorería fusionada con la consolidación de logística, más
-SUPER_ADMIN y la parametrización. **Nada de esto está aplicado en remoto**, que
-conserva 28 migraciones (hasta `202608170007`).
+**Desplegado en producción el 2026-08-19.** `main` quedó en `e572801` con la
+entrega de despacho, trazabilidad y tesorería fusionada con la consolidación de
+logística, más SUPER_ADMIN y la parametrización. El remoto pasó de 28 a **38
+migraciones**; el front se desplegó por la integración de Git de Vercel y el alias
+de producción apunta al build nuevo.
 
 ## Lo verificado
 
@@ -294,29 +295,43 @@ datos sintéticos y su aviso visible. Es la postura correcta y tiene valor: perm
 que la Gobernación y los gremios recorran el flujo y decidan lo que solo ellos
 pueden decidir. No autoriza datos reales, recaudo ni comunicación institucional.
 
-## Listo para migrar
+## Despliegue del 2026-08-19
 
-**NO LISTO PARA MIGRAR**, y la razón no es técnica.
+Las diez migraciones pendientes se aplicaron y el front se desplegó a continuación.
+Comprobado sobre el dominio de producción: `/api/health` responde 200 con la base
+conectada, `/registro` —una ruta que solo existe en el código nuevo— responde 200, las
+consolas redirigen a ingreso para quien no tiene sesión, y la portada sirve
+`/donar?necesidad=` junto a «Solicitado · comprometido · entregado», que se derivan de
+`need_item_positions`, una vista creada por `202608190002`. Es decir: esquema nuevo y
+front nuevo hablándose.
 
-Lo técnico está en verde: las 38 migraciones aplican desde cero, `npm run verify`
-pasa de extremo a extremo y las dos auditorías de superficie no encuentran problemas.
-Lo que falta para tocar producción es lo que este repositorio no puede resolver solo:
+**Cómo se hizo, porque no fue por el camino previsto.** El pooler de sesión (puerto
+5432) no es alcanzable desde el equipo de trabajo: acepta el TCP y muere sin responder
+al saludo de Postgres, comprobado también fuera de Docker. Las migraciones se aplicaron
+por el pooler de transacción (6543) con `--db-url`, y el front se desplegó fusionando a
+`main` y dejando que la integración de Git de Vercel construyera, porque `vercel --prod`
+desde el equipo falla con `fetch failed` por la misma red. Queda descrito en
+`RELEASE_CHECKLIST.md` junto al workflow de despliegue, que es la vía recomendada para
+la próxima.
 
-1. **Nada de esta línea se ha probado contra el remoto.** El remoto conserva 28
-   migraciones; estas diez —seis de la consolidación y cuatro de esta sesión— nunca se
-   han aplicado allí. Entre ellas hay cambios de contrato que rompen llamadores viejos:
-   `submit_donation_intake_v2` pasa a diecisiete parámetros, `create_shipment` a siete,
-   `register_delivery` a cinco, `shipments.carrier_name` se retira y `auth.enable_signup`
-   se abre con confirmación obligatoria. Aplicarlas exige ventana, respaldo y repetir el
-   arnés de simulación remota.
-2. **`G-002` a `G-006` siguen abiertas.** Operador, DPIA, política de aceptación,
-   proveedor financiero y autorización de marca son decisiones humanas. Sin ellas no
-   debe entrar un solo dato real, por muy verde que esté la suite.
-3. **`G-007`, `G-015` y `G-017`** —protección de contraseñas filtradas, WAF de borde y
-   enlaces verificables a remoto— son administración de entorno, no código.
-4. **Las credenciales de base expuestas siguen sin rotar** y no hay backups remotos con
-   PITR ni monitoreo externo.
-5. **La concesión de SUPER_ADMIN en remoto tendrá que hacerse con `service_role`**, no
-   desde la aplicación: es deliberado, pero hay que preverlo en el runbook de despliegue.
+**Ventana de incompatibilidad.** Entre la aplicación de las migraciones y el despliegue
+del front hubo unos minutos con el esquema nuevo y el código viejo: el registro de
+aportes y las escrituras de bodega no funcionaban porque las firmas de RPC que ese
+código invoca ya no existían. Era inevitable con este conjunto de cambios y por eso el
+workflow de despliegue encadena ambos pasos en un solo trabajo.
 
-El despliegue es una fase aparte y necesita autorización explícita.
+## Pendiente inmediato tras el despliegue
+
+| Qué | Por qué no lo resuelve el despliegue |
+|---|---|
+| Habilitar registro y confirmación de correo en el panel de Auth | `db push` no toca la configuración de Auth. Sin esto `/registro` acepta el formulario y la activación nunca llega. **No usar `supabase config push`**: `config.toml` declara `site_url` en localhost |
+| Conceder la autoridad global con `grant_super_admin` | No hay vía desde la aplicación (ADR-011) y la escritura directa está bloqueada por disparador. Hasta entonces `/operaciones/parametrizacion` no es alcanzable para nadie |
+| Rotar la contraseña de la base | Quedó expuesta durante la operación |
+| Repetir el arnés de simulación remota | Cierra `G-022` globalmente |
+
+## Lo que este despliegue no cambia
+
+`G-002` a `G-006` (operador, DPIA, política de aceptación, proveedor financiero, marca)
+son decisiones humanas; `G-007`, `G-015` y `G-017` son administración de entorno; no hay
+backups remotos con PITR ni monitoreo externo. El entorno sigue siendo **G1 con datos
+sintéticos** y no debe recibir datos reales, dinero ni comunicación institucional.
