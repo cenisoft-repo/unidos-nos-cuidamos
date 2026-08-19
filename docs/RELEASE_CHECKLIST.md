@@ -57,38 +57,43 @@ eso vive en el panel.
    `preflight:local` bloquea y con él `npm run verify`: es su propósito. Retirarlos al
    terminar.
 
-2. **Credencial.** El CLI necesita la contraseña de la base del proyecto remoto:
+2. **Credencial.** El CLI necesita la contraseña de la base del proyecto remoto. La
+   terminal de este equipo es **PowerShell**, no bash: `export` no existe aquí.
 
-   ```bash
-   export SUPABASE_DB_PASSWORD='...'
+   ```powershell
+   $env:SUPABASE_DB_PASSWORD = 'la-contraseña-real-del-proyecto'
    ```
+
+   Se escribe en la terminal interactiva, no se guarda en ningún archivo del repositorio
+   ni se comparte por chat. Vive solo mientras dure esa sesión de PowerShell; al terminar
+   se retira con `Remove-Item Env:\SUPABASE_DB_PASSWORD`.
 
 3. **Respaldo antes de nada.** No es opcional; es lo único que hace reversible el paso 5.
 
-   ```bash
+   ```powershell
    npx supabase db dump --linked -f .local-backups/prod-schema-pre-superadmin.sql
    ```
 
-   ```bash
+   ```powershell
    npx supabase db dump --linked --data-only -f .local-backups/prod-data-pre-superadmin.sql
    ```
 
 4. **Confirmar qué se va a aplicar.** Deben aparecer diez pendientes y ninguna
    discrepancia en las 28 ya aplicadas.
 
-   ```bash
+   ```powershell
    npx supabase migration list --linked
    ```
 
 5. **Aplicar.**
 
-   ```bash
+   ```powershell
    npx supabase db push --linked
    ```
 
 6. **Desplegar el front inmediatamente después.**
 
-   ```bash
+   ```powershell
    npx vercel --prod
    ```
 
@@ -98,7 +103,7 @@ eso vive en el panel.
 
 8. **Conceder la autoridad global.** No hay forma de hacerlo desde la aplicación —es
    deliberado, ADR-011— y la escritura directa sobre `memberships` está bloqueada por
-   disparador. Con la clave de servicio del proyecto:
+   disparador. Desde el editor SQL del panel, con rol de servicio:
 
    ```sql
    select public.grant_super_admin('correo@dominio', '<organization_id>', '<event_id>', 'Motivo de la concesión');
