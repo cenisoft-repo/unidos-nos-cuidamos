@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { EVENT_ID } from "@/lib/constants";
+import { hasOperationalRole } from "@/lib/authorization";
 import { OperationalReports } from "@/components/operational-reports";
 
 export const metadata: Metadata = { title: "Reportes operativos" };
@@ -18,7 +19,7 @@ export default async function ReportsPage() {
   const membershipsResult = await supabase.from("memberships").select("role").eq("user_id", user.id).eq("event_id", EVENT_ID).eq("active", true);
   assertSupabaseSuccess("membresia_reportes", [membershipsResult]);
   const roles = new Set((membershipsResult.data ?? []).map((item) => item.role));
-  if (!["warehouse_operator", "logistics_operator", "event_admin", "auditor"].some((role) => roles.has(role))) redirect("/operaciones");
+  if (!hasOperationalRole(roles, ["warehouse_operator", "logistics_operator", "event_admin", "auditor"])) redirect("/operaciones");
 
   // Todos los reportes salen del Kardex y de las funciones `security invoker`: cada persona
   // ve exactamente lo que su membresía ya podía leer.

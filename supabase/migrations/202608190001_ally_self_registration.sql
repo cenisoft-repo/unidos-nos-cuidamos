@@ -353,10 +353,12 @@ begin
   values (registration.legal_name, organization_slug, true, 'active')
   returning * into created_org;
 
-  -- La verificación queda escrita con su método real: correo confirmado, no revisión documental.
-  -- Elevarla a verificación documental del NIT es una decisión externa, no de esta migración.
+  -- G-039: la verificación queda escrita con su método y con su nivel reales. Confirmar
+  -- el correo es `email_verified`, no `verified`: comprobar el buzón no es comprobar que
+  -- la organización es quien dice ser. Elevarla exige una decisión humana, que se registra
+  -- con `decide_organization_verification`.
   insert into public.organization_verifications(organization_id, state, method, decided_at, expires_at)
-  values (created_org.id, 'verified', 'self_registration_email_confirmed', now(), now() + interval '90 days');
+  values (created_org.id, 'email_verified', 'self_registration_email_confirmed', now(), now() + interval '90 days');
 
   insert into public.memberships(user_id, organization_id, event_id, role, active)
   values (actor_id, created_org.id, registration.event_id, 'partner_reporter', true)

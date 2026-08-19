@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { currencyFormat, formatDate, numberFormat } from "@/lib/format";
 import { EVENT_ID, labelStatus } from "@/lib/constants";
+import { hasOperationalRole } from "@/lib/authorization";
 import { servesNonProductionData } from "@/lib/environment";
 import { toDonationFlowCatalogs, type DonationCatalogRow } from "@/lib/donation-catalogs";
 import { StatusPill } from "@/components/status-pill";
@@ -73,15 +74,22 @@ export default async function OperationsPage() {
 
   // Los roles se resuelven antes que los datos: definen qué se puede consultar y qué
   // indicadores tienen sentido para esta persona.
-  const [profileResult, membershipsResult] = await Promise.all([
+  const [profileResult, membershipsResult, superAdminResult] = await Promise.all([
     supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
     supabase.from("memberships").select("role,organization_id,organizations(name)").eq("user_id", user.id).eq("event_id", EVENT_ID).eq("active", true),
+    // La autoridad global no se deduce de la lista de roles del evento: es transversal y
+    // la declara la base, que es quien la aplica.
+    supabase.rpc("is_super_admin"),
   ]);
-  assertSupabaseSuccess("membresia_centro_operativo", [profileResult, membershipsResult]);
+  assertSupabaseSuccess("membresia_centro_operativo", [profileResult, membershipsResult, superAdminResult]);
+  const isSuperAdmin = superAdminResult.data === true;
   const memberships = (membershipsResult.data ?? []) as unknown as Membership[];
   const roles = new Set(memberships.map((item) => item.role));
-  const canVerify = roles.has("verifier") || roles.has("event_admin");
-  const canSeeTreasury = ["treasury_requester", "treasury_approver", "event_admin", "auditor"].some((role) => roles.has(role));
+  // La autoridad global es transversal al evento, así que se declara aparte de la lista
+  // de membresías de este evento y desde ahí atraviesa las mismas comprobaciones.
+  if (isSuperAdmin) roles.add("super_admin");
+  const canVerify = hasOperationalRole(roles, ["verifier", "event_admin"]);
+  const canSeeTreasury = hasOperationalRole(roles, ["treasury_requester", "treasury_approver", "event_admin", "auditor"]);
   // El aliado responde observaciones sobre sus propios aportes; no verifica.
   const isPartner = roles.has("partner_reporter");
 
@@ -131,12 +139,13 @@ export default async function OperationsPage() {
   return <div className="ops-shell">
     <div className="ops-header"><div><p className="eyebrow">Centro de mando</p><h1>Buenos días, {profileResult.data?.full_name?.split(" ")[0] ?? "equipo"}.</h1><p>{memberships.map((item) => roleNames[item.role] ?? item.role).filter((value,index,array) => array.indexOf(value) === index).join(" · ")}</p></div><div className="ops-actions"><Link className="button button-outline button-small ops-export" href="/api/exports/operations.xlsx"><Download size={15} /> Exportar Excel</Link><div className="ops-user"><div className="ops-user-avatar">{(profileResult.data?.full_name ?? user.email ?? "RS").slice(0,2).toUpperCase()}</div><div><strong>{profileResult.data?.full_name}</strong><small>{user.email}</small></div></div><form action={logout}><button className="button button-outline button-small" aria-label="Cerrar sesión"><LogOut size={15} /></button></form></div></div>
     {servesNonProductionData && <div className="ops-alert"><AlertTriangle size={17} /><strong>Instancia de práctica:</strong> los datos, fondos y decisiones de esta vista no son reales.</div>}
-    <nav className="ops-subnav" aria-label="Módulos operativos"><Link href="/operaciones">Mando</Link>{roles.has("event_admin")&&<Link href="/operaciones/centros">Puntos de entrega</Link>}{(roles.has("warehouse_operator")||roles.has("logistics_operator")||roles.has("event_admin"))&&<Link href="/operaciones/bodega">Bodega y logística</Link>}{(roles.has("treasury_requester")||roles.has("treasury_approver")||roles.has("event_admin")||roles.has("auditor"))&&<Link href="/operaciones/tesoreria">Tesorería</Link>}{(roles.has("warehouse_operator")||roles.has("logistics_operator")||roles.has("event_admin")||roles.has("auditor"))&&<Link href="/operaciones/reportes">Reportes</Link>}</nav>
+    <nav className="ops-subnav" aria-label="Módulos operativos"><Link href="/operaciones">Mando</Link>{hasOperationalRole(roles, ["event_admin"])&&<Link href="/operaciones/centros">Puntos de entrega</Link>}{hasOperationalRole(roles, ["warehouse_operator","logistics_operator","event_admin"])&&<Link href="/operaciones/bodega">Bodega y logística</Link>}{hasOperationalRole(roles, ["treasury_requester","treasury_approver","event_admin","auditor"])&&<Link href="/operaciones/tesoreria">Tesorería</Link>}{hasOperationalRole(roles, ["warehouse_operator","logistics_operator","event_admin","auditor"])&&<Link href="/operaciones/reportes">Reportes</Link>}{isSuperAdmin&&<Link href="/operaciones/parametrizacion">Parametrización</Link>}</nav>
     <section className="ops-launcher" aria-labelledby="ops-launcher-title"><header><div><p className="eyebrow">Acciones rápidas</p><h2 id="ops-launcher-title">¿Qué necesitas hacer ahora?</h2></div><span>Solo aparecen recorridos permitidos por tu rol.</span></header><div className="ops-launcher-grid">
       {canVerify && <Link href="#cola-verificacion"><span><ClipboardCheck size={21} /></span><div><strong>Revisar casos</strong><small>{needs.length + intakes.length} pendientes en la cola</small></div><ArrowRight size={16} /></Link>}
-      {roles.has("event_admin") && <Link href="/operaciones/centros"><span><MapPinned size={21} /></span><div><strong>Configurar puntos</strong><small>Ubicación, categorías y disponibilidad</small></div><ArrowRight size={16} /></Link>}
-      {(roles.has("warehouse_operator")||roles.has("logistics_operator")||roles.has("event_admin")) && <Link href="/operaciones/bodega"><span><QrCode size={21} /></span><div><strong>Recibir o mover bienes</strong><small>Buscar código, lote o despacho</small></div><ArrowRight size={16} /></Link>}
-      {(roles.has("treasury_requester")||roles.has("treasury_approver")||roles.has("event_admin")||roles.has("auditor")) && <Link href="/operaciones/tesoreria"><span><WalletCards size={21} /></span><div><strong>Revisar tesorería</strong><small>Solicitudes y movimientos conciliados</small></div><ArrowRight size={16} /></Link>}
+      {hasOperationalRole(roles, ["event_admin"]) && <Link href="/operaciones/centros"><span><MapPinned size={21} /></span><div><strong>Configurar puntos</strong><small>Ubicación, categorías y disponibilidad</small></div><ArrowRight size={16} /></Link>}
+      {hasOperationalRole(roles, ["warehouse_operator","logistics_operator","event_admin"]) && <Link href="/operaciones/bodega"><span><QrCode size={21} /></span><div><strong>Recibir o mover bienes</strong><small>Buscar código, lote o despacho</small></div><ArrowRight size={16} /></Link>}
+      {hasOperationalRole(roles, ["treasury_requester","treasury_approver","event_admin","auditor"]) && <Link href="/operaciones/tesoreria"><span><WalletCards size={21} /></span><div><strong>Revisar tesorería</strong><small>Solicitudes y movimientos conciliados</small></div><ArrowRight size={16} /></Link>}
+      {isSuperAdmin && <Link href="/operaciones/parametrizacion"><span><ShieldCheck size={21} /></span><div><strong>Parametrizar la plataforma</strong><small>Usuarios, alcance, catálogos y auditoría</small></div><ArrowRight size={16} /></Link>}
       <Link href="/seguimiento"><span><Search size={21} /></span><div><strong>Consultar un código</strong><small>Ver el recorrido público y seguro</small></div><ArrowRight size={16} /></Link>
     </div></section>
     <section className="ops-kpis" aria-label="Indicadores operativos"><div className="ops-kpi"><span>Necesidades por revisar</span><strong>{needs.length}</strong><small>reportes ciudadanos sin publicar</small></div><div className="ops-kpi"><span>Aportes por revisar</span><strong>{intakes.length}</strong><small>reportados por aliados autenticados</small></div><div className="ops-kpi"><span>Lotes visibles</span><strong>{lots.length}</strong><small>según tu organización</small></div>{canSeeTreasury && <div className="ops-kpi"><span>Saldo conciliado</span><strong>{currencyFormat.format(Number(treasury?.balance ?? 0))}</strong><small>{treasury?.movement_count ?? 0} movimientos del libro completo</small></div>}</section>

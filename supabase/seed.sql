@@ -8,7 +8,8 @@ insert into auth.users (
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000102','authenticated','authenticated','aliado@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Luis Aliado"}',now(),now(),'','','',''),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000103','authenticated','authenticated','bodega@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Marta Bodega"}',now(),now(),'','','',''),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000104','authenticated','authenticated','solicita@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Sofía Solicitudes"}',now(),now(),'','','',''),
-  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000105','authenticated','authenticated','aprueba@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Carlos Aprobaciones"}',now(),now(),'','','','')
+  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000105','authenticated','authenticated','aprueba@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Carlos Aprobaciones"}',now(),now(),'','','',''),
+  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000106','authenticated','authenticated','superadmin@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Elena Plataforma"}',now(),now(),'','','','')
 on conflict (id) do nothing;
 
 insert into auth.identities (id, provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
@@ -17,7 +18,7 @@ from auth.users u
 where u.id in (
   '00000000-0000-0000-0000-000000000101','00000000-0000-0000-0000-000000000102',
   '00000000-0000-0000-0000-000000000103','00000000-0000-0000-0000-000000000104',
-  '00000000-0000-0000-0000-000000000105'
+  '00000000-0000-0000-0000-000000000105','00000000-0000-0000-0000-000000000106'
 )
 on conflict (provider_id, provider) do nothing;
 
@@ -40,7 +41,11 @@ insert into public.memberships(user_id,organization_id,event_id,role) values
 ('00000000-0000-0000-0000-000000000103','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','warehouse_operator'),
 ('00000000-0000-0000-0000-000000000103','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','logistics_operator'),
 ('00000000-0000-0000-0000-000000000104','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_requester'),
-('00000000-0000-0000-0000-000000000105','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_approver');
+('00000000-0000-0000-0000-000000000105','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_approver'),
+-- SUPER_ADMIN. La organizacion y el evento de esta fila no acotan nada: el alcance
+-- global lo declara el rol, no la fila. Se siembra directamente porque `grant_super_admin`
+-- es una operacion privilegiada y el seed corre con privilegios de mantenimiento.
+('00000000-0000-0000-0000-000000000106','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','super_admin');
 
 -- Promueve los aliados de referencia a organizaciones operativas con su punto de acopio.
 -- Misma función que usa la migración; aquí se ejecuta con el evento y las membresías ya

@@ -445,3 +445,83 @@ test("aliado responde una observación y el aporte vuelve a verificación", asyn
   await bloque.getByRole("button", { name: "Enviar corrección" }).click();
   await expect(page.locator("#aportes-observados")).toBeHidden({ timeout: 15000 });
 });
+
+/*
+ * Alcance por rol en la interfaz (Fases 12 y 13). Lo que se comprueba aquí es que la
+ * pantalla y la base digan lo mismo: la parametrización no aparece para quien no la
+ * tiene, y llegar por URL tampoco la abre.
+ */
+test("la parametrización no existe para quien no es autoridad global", async ({ page }) => {
+  await entrarComo(page, "aliado@rutasolidaria.local");
+  await expect(page.getByRole("navigation", { name: "Módulos operativos" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Parametrización" })).toHaveCount(0);
+
+  // Ni siquiera escribiendo la dirección: la puerta es la misma que aplica la base.
+  await page.goto("/operaciones/parametrizacion");
+  await expect(page).toHaveURL(/\/operaciones$/);
+  await expect(page.getByRole("heading", { level: 1 })).not.toHaveText(/Parametrización/);
+});
+
+test("SUPER_ADMIN administra roles, catálogos y ve quién cambió qué", async ({ page }) => {
+  await entrarComo(page, "superadmin@rutasolidaria.local", "/operaciones/parametrizacion");
+  await expect(page.getByRole("heading", { name: "Parametrización", level: 1 })).toBeVisible();
+
+  // La autoridad global se ve como tal y no puede editarse a sí misma desde la consola.
+  const propiaFila = page.getByRole("row", { name: /superadmin@rutasolidaria.local/i });
+  await expect(propiaFila.locator(".param-flag")).toHaveText("Autoridad global");
+  await expect(propiaFila.getByText("Se administra fuera de la consola")).toBeVisible();
+  // SUPER_ADMIN no es un rol que la consola reparta.
+  await expect(page.getByLabel("Rol")).not.toContainText("Autoridad global");
+
+  // 1. Asigna alcance operativo en una organización donde no tiene membresía propia.
+  await page.getByLabel("Cuenta").selectOption({ label: "Sofía Solicitudes" });
+  await page.getByLabel("Organización").selectOption({ label: "Aliados Unidos Demo" });
+  await page.getByLabel("Rol").selectOption("warehouse_operator");
+  await page.getByRole("button", { name: "Asignar rol" }).click();
+  await expect(page.getByRole("status")).toContainText("Rol asignado", { timeout: 15000 });
+  await expect(page.getByRole("row", { name: /solicita@rutasolidaria.local/i })).toContainText("Centro de acopio");
+
+  // 2. G-039: la consola distingue confirmar un correo de verificar una organización.
+  await page.getByRole("tab", { name: "Organizaciones" }).click();
+  const filaAliada = page.getByRole("row", { name: /Aliados Unidos Demo/ });
+  await expect(filaAliada).toContainText("Sin comprobar");
+  await page.getByLabel("Sustento de la decisión").fill("Cámara de comercio y RUT revisados en el ejercicio");
+  await filaAliada.getByRole("button", { name: "Verificar" }).click();
+  await expect(page.getByRole("status")).toContainText("Verificación registrada", { timeout: 15000 });
+  await expect(page.getByRole("row", { name: /Aliados Unidos Demo/ })).toContainText("Organización verificada");
+  await expect(page.getByRole("row", { name: /Aliados Unidos Demo/ })).toContainText("document_reviewed");
+
+  // 3. Publica una versión nueva de un catálogo que sí es dato.
+  await page.getByRole("tab", { name: "Catálogos" }).click();
+  await page.getByRole("button", { name: /Departamentos de cobertura inicial/ }).click();
+  const valores = page.getByLabel("Valores vigentes (JSON)");
+  const vigentes = JSON.parse(await valores.inputValue()) as string[];
+  // El catálogo rechaza repetidos, así que se agrega uno que no esté ya en la lista.
+  const nuevo = ["Nariño", "Cauca", "Huila", "Tolima"].find((departamento) => !vigentes.includes(departamento));
+  expect(nuevo, "el ejercicio necesita un departamento que no esté en la cobertura").toBeTruthy();
+  await valores.fill(JSON.stringify([...vigentes, nuevo], null, 2));
+  await page.getByLabel("Motivo del cambio").fill(`Se suma ${nuevo} a la cobertura del ejercicio`);
+  await page.getByRole("button", { name: /Publicar versión/ }).click();
+  await expect(page.getByRole("status")).toContainText("Catálogo publicado", { timeout: 15000 });
+  await expect(page.getByRole("button", { name: /Departamentos de cobertura inicial/ })).toContainText(`${vigentes.length + 1} valores`);
+
+  // 4. Los cambios quedan con actor, entidad y el antes y el después.
+  await page.getByRole("tab", { name: "Auditoría" }).click();
+  await expect(page.getByRole("cell", { name: "parameterize_catalog" }).first()).toBeVisible();
+  await expect(page.getByRole("row", { name: /parameterize_catalog/ }).first()).toContainText("superadmin@rutasolidaria.local");
+  await expect(page.getByRole("row", { name: /parameterize_catalog/ }).first()).toContainText("→");
+  await expect(page.getByRole("cell", { name: "insert" }).first()).toBeVisible();
+});
+
+test("SUPER_ADMIN atraviesa las organizaciones sin saltarse el Kardex", async ({ page }) => {
+  await entrarComo(page, "superadmin@rutasolidaria.local", "/operaciones/reportes");
+  // Trazabilidad completa: el estado global sale del Kardex, no de un contador aparte.
+  await expect(page.getByRole("heading", { name: /Estado global del inventario/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Historial de movimientos/ })).toBeVisible();
+
+  // Y administra puntos de cualquier organización, sin ser administrador de ninguna.
+  await page.goto("/operaciones/centros");
+  await expect(page.getByRole("heading", { name: /Parametrizar puntos de entrega/ })).toBeVisible();
+  await expect(page.getByLabel("Organización responsable")).toContainText("Red Humanitaria Demo");
+  await expect(page.getByLabel("Organización responsable")).toContainText("Aliados Unidos Demo");
+});

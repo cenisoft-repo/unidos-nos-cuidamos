@@ -27,17 +27,25 @@ export default async function DeliveryPointsPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/ingresar?next=/operaciones/centros");
 
-  const [membershipsResult, pointsResult, catalogsResult] = await Promise.all([
+  const [membershipsResult, pointsResult, catalogsResult, superAdminResult] = await Promise.all([
     supabase.from("memberships").select("organization_id,organizations(name)").eq("user_id", user.id).eq("event_id", EVENT_ID).eq("role", "event_admin").eq("active", true),
     supabase.rpc("delivery_points_admin", { p_event_id: EVENT_ID }),
     supabase.rpc("donation_flow_catalogs"),
+    supabase.rpc("is_super_admin"),
   ]);
-  assertSupabaseSuccess("parametrizacion_puntos_entrega", [membershipsResult, pointsResult, catalogsResult]);
+  assertSupabaseSuccess("parametrizacion_puntos_entrega", [membershipsResult, pointsResult, catalogsResult, superAdminResult]);
 
   const memberships = (membershipsResult.data ?? []) as unknown as AdminMembership[];
-  if (!memberships.length) redirect("/operaciones");
-  const organizations = memberships
-    .map((membership) => ({ id: membership.organization_id, name: organizationName(membership) }))
+  // La autoridad global administra puntos sin tener membresía de administrador en el evento.
+  if (!memberships.length && superAdminResult.data !== true) redirect("/operaciones");
+  /*
+   * La autoridad global administra puntos de cualquier organización, así que su lista no
+   * puede salir de sus membresías: sale de las organizaciones existentes. Para el resto,
+   * la lista sigue siendo exactamente donde administra.
+   */
+  const organizations = (superAdminResult.data === true
+    ? ((await supabase.from("organizations").select("id,name").order("name")).data ?? []) as { id: string; name: string }[]
+    : memberships.map((membership) => ({ id: membership.organization_id, name: organizationName(membership) })))
     .filter((organization, index, all) => all.findIndex((candidate) => candidate.id === organization.id) === index)
     .sort((left, right) => left.name.localeCompare(right.name, "es"));
   const catalogs = toDonationFlowCatalogs((catalogsResult.data ?? []) as DonationCatalogRow[]);
@@ -48,7 +56,7 @@ export default async function DeliveryPointsPage() {
   return <div className="ops-shell">
     <div className="ops-header"><div><p className="eyebrow">Administración segura</p><h1>Parametrizar puntos de entrega</h1><p>Define dónde se reciben bienes, qué acepta cada punto y qué información puede mostrarse.</p></div><MapPinned size={36} color="var(--forest-2)" /></div>
     {servesNonProductionData && <div className="ops-alert"><AlertTriangle size={17} /><strong>Instancia de práctica:</strong> usa únicamente ubicaciones y datos sintéticos.</div>}
-    <nav className="ops-subnav" aria-label="Módulos operativos"><Link href="/operaciones">Mando</Link><Link aria-current="page" href="/operaciones/centros">Puntos de entrega</Link><Link href="/operaciones/bodega">Bodega y logística</Link><Link href="/operaciones/tesoreria">Tesorería</Link></nav>
+    <nav className="ops-subnav" aria-label="Módulos operativos"><Link href="/operaciones">Mando</Link><Link aria-current="page" href="/operaciones/centros">Puntos de entrega</Link><Link href="/operaciones/bodega">Bodega y logística</Link><Link href="/operaciones/tesoreria">Tesorería</Link>{superAdminResult.data === true && <Link href="/operaciones/parametrizacion">Parametrización</Link>}</nav>
     <DeliveryPointsManager organizations={organizations} points={(pointsResult.data ?? []) as DeliveryPointAdmin[]} categories={categories} />
   </div>;
 }

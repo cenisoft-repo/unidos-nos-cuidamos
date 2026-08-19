@@ -883,3 +883,37 @@ h3 { font-size: 20px; margin-bottom: 9px; }
   .amendment-item { grid-template-columns: 1fr; }
   .amendment-item input { width: 100%; }
 }
+
+/* Parametrización · consola de autoridad global. Reutiliza el sistema visual vigente
+   (paneles, tablas de reporte, campos) y solo añade lo que no existía: las pestañas de
+   sección, el selector de catálogo y la vista de antes/después de la auditoría. */
+.param-shell { display: flex; flex-direction: column; gap: 20px; }
+.param-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.param-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--white); color: var(--forest); font-size: 12px; font-weight: 800; }
+.param-tabs button.is-selected { border-color: var(--forest-2); background: var(--mint); }
+.param-assign { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-items: end; padding: 16px 20px; }
+.param-assign .field { margin: 0; }
+.param-assign button { min-height: 44px; }
+.param-note { display: flex; align-items: center; gap: 7px; margin: 0 20px 16px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.param-flag { display: block; margin-top: 3px; color: var(--forest-2); font-size: 10px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.param-chip { display: inline-flex; align-items: center; gap: 5px; margin: 0 5px 5px 0; padding: 4px 9px; border-radius: var(--radius-pill); background: var(--mint); color: #204b3d; font-size: 11px; font-weight: 700; }
+.param-chip button { min-width: 22px; min-height: 22px; border: 0; border-radius: 50%; background: transparent; color: #204b3d; font-size: 13px; line-height: 1; }
+.param-chip button:hover { background: #cfe3d8; }
+.param-catalog-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 9px; padding: 16px 20px 4px; }
+.param-catalog-picker button { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--white); text-align: left; }
+.param-catalog-picker button.is-selected { border-color: var(--forest-2); background: var(--mint); }
+.param-catalog-picker strong { font-size: 12px; }
+.param-catalog-picker small { color: var(--muted); font-size: 10px; }
+.param-catalog-editor { display: flex; flex-direction: column; gap: 13px; padding: 16px 20px 20px; }
+.param-catalog-editor textarea { padding: 11px; border: 1px solid #9caea6; border-radius: var(--radius-xs); background: var(--white); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; resize: vertical; }
+.param-catalog-editor input { min-height: 44px; padding: 0 11px; border: 1px solid #9caea6; border-radius: var(--radius-xs); background: var(--white); font-size: 15px; }
+.param-catalog-editor button { align-self: flex-start; min-height: 44px; }
+.param-catalog-editor .param-note { margin: 0; }
+.param-diff { display: block; max-width: 460px; overflow-x: auto; color: var(--muted-strong); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; line-height: 1.6; }
+@media (max-width: 640px) {
+  .param-assign, .param-catalog-picker { grid-template-columns: 1fr; }
+  .param-diff { max-width: 100%; }
+}
+.param-verification-note { margin: 0; padding: 16px 20px 4px; }
+.param-verification-note input { min-height: 44px; padding: 0 11px; border: 1px solid #9caea6; border-radius: var(--radius-xs); background: var(--white); font-size: 15px; }
+.param-verification-actions { display: flex; flex-wrap: wrap; gap: 6px; }

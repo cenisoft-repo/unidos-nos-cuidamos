@@ -10,7 +10,7 @@
 -- 19 se actualiza el inventario destino · 20 el movimiento queda cerrado y auditable
 
 begin;
-select plan(44);
+select plan(54);
 
 -- ---------------------------------------------------------------- 1. necesidad de 50 kg
 
@@ -283,6 +283,65 @@ select ok(
    where entity_table = 'transfer_requests'
      and entity_id = (select request_id from flow_transfer)) >= 3,
   '20 la solicitud, la autorización y el cierre quedan auditados');
+
+-- ------------------------------------------- 21 a 24. el destino recibe de menos
+-- Fase 15 del loop: si el destino recibe 3 de los 5 que salieron, su inventario crece
+-- solo en 3, la diferencia queda registrada como faltante y el historial no pierde los
+-- 2 kg. Un traslado que cuadra por decreto no serviria de nada.
+
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}',true);
+create temporary table flow_transfer_short as
+select * from public.request_stock_transfer(
+  (select id from flow_point), (select id from flow_destination),
+  'Alimentos', 'kilogramo', 5,
+  'Segundo envio del ejercicio para probar la conciliacion con faltante.',
+  'flow-transfer-002'
+);
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
+select is(
+  public.decide_stock_transfer((select request_id from flow_transfer_short),'authorize',5,'Autorizacion del segundo envio')::text,
+  'authorized', '21 el administrador autoriza los 5 kg restantes');
+
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}',true);
+create temporary table flow_shipment_short as
+select public.create_shipment(
+  null, (select request_id from flow_transfer_short), (select id from flow_point), (select id from flow_destination),
+  null, '{"mode":"institucional","contact_name":"Conductor Sintetico","contact_document":"CC-00000002","contact_phone":"6040000001","vehicle":"Camioneta","plate":"xyz789","responsible":"Marta Bodega"}'::jsonb,
+  'flow-shipment-002'
+) as id;
+select is(
+  public.dispatch_shipment((select id from flow_shipment_short))::text,
+  'dispatched', '22 sale el segundo despacho');
+select is(
+  public.advance_shipment((select id from flow_shipment_short), 'arrived')::text,
+  'arrived', '22 el segundo despacho llega al destino');
+
+create temporary table flow_delivery_short as
+select public.register_delivery((select id from flow_shipment_short), 3, 0, 2, 'flow-delivery-002') as id;
+select is(
+  (select outcome from public.shipment_reconciliation((select id from flow_shipment_short))),
+  'NOVEDAD', '23 recibir de menos se concilia como NOVEDAD, no como conforme');
+select is(
+  (select quantity_missing from public.shipment_reconciliation((select id from flow_shipment_short))),
+  2::numeric, '23 el faltante queda cuantificado en 2 kg');
+select is(
+  (select quantity_dispatched from public.shipment_reconciliation((select id from flow_shipment_short))),
+  5::numeric, '23 lo despachado sigue siendo 5: el historial no pierde los 2 kg');
+select is(
+  (select status::text from public.shipments where id = (select id from flow_shipment_short)),
+  'incident', '23 el despacho queda marcado como novedad');
+select is(
+  (select sum(lot_position.quantity_available)
+   from public.inventory_lot_positions as lot_position
+   where lot_position.location_id = (select id from flow_destination)),
+  18::numeric, '24 el destino crece solo con lo confirmado: 15 + 3, nunca 15 + 5');
+select is(
+  (select quantity_in_transit from public.inventory_lot_positions where lot_id = (select id from flow_lot)),
+  0::numeric, '24 nada queda colgado en movimiento tras conciliar la novedad');
+select is(
+  (select quantity_delivered + quantity_damaged + quantity_missing
+   from public.deliveries where id = (select id from flow_delivery_short)),
+  5::numeric, '24 lo recibido, lo danado y el faltante siguen sumando lo que salio');
 
 select * from finish();
 rollback;

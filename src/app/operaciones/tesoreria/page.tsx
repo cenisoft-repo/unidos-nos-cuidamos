@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { TreasuryConsole } from "@/components/treasury-console";
 import { EVENT_ID } from "@/lib/constants";
+import { hasOperationalRole } from "@/lib/authorization";
 
 export const metadata: Metadata = { title: "Tesorería sandbox" };
 export const dynamic = "force-dynamic";
@@ -19,8 +20,8 @@ export default async function TreasuryPage() {
   const membershipsResult = await supabase.from("memberships").select("role").eq("user_id", user.id).eq("event_id", EVENT_ID).eq("active", true);
   assertSupabaseSuccess("membresia_tesoreria", [membershipsResult]);
   const roles = new Set((membershipsResult.data ?? []).map((item) => item.role));
-  if (!["treasury_requester", "treasury_approver", "event_admin", "auditor"].some((role) => roles.has(role))) redirect("/operaciones");
-  const canReviewMoney = roles.has("treasury_approver") || roles.has("event_admin") || roles.has("auditor");
+  if (!hasOperationalRole(roles, ["treasury_requester", "treasury_approver", "event_admin", "auditor"])) redirect("/operaciones");
+  const canReviewMoney = hasOperationalRole(roles, ["treasury_approver", "event_admin", "auditor"]);
 
   const results = await Promise.all([
     supabase.from("funds").select("id,name,verified,currency").eq("event_id", EVENT_ID),
@@ -48,8 +49,8 @@ export default async function TreasuryPage() {
         ledger={((balance.data ?? [])[0] ?? { balance: 0, reconciled_credits: 0, reconciled_debits: 0, movement_count: 0 }) as never}
         decisions={(decisions.data ?? []) as never[]}
         userId={user.id}
-        canRequest={roles.has("treasury_requester") || roles.has("event_admin")}
-        canApprove={roles.has("treasury_approver") || roles.has("event_admin")}
+        canRequest={hasOperationalRole(roles, ["treasury_requester", "event_admin"])}
+        canApprove={hasOperationalRole(roles, ["treasury_approver", "event_admin"])}
       />
     </div>
   );

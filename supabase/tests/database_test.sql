@@ -58,7 +58,16 @@ select ok(has_function_privilege('authenticated','public.submit_donation_intake_
 select ok(has_function_privilege('authenticated','public.prepare_intake_photo_evidence(uuid,text,text,bigint,text)','EXECUTE'), 'El usuario autenticado puede reservar una fotografía mediante la RPC');
 select ok(has_function_privilege('authenticated','public.confirm_intake_photo_evidence(uuid)','EXECUTE'), 'El usuario autenticado puede confirmar una fotografía mediante la RPC');
 select ok(not has_table_privilege('anon','public.donation_intake_evidence','SELECT'), 'El visitante no puede leer vínculos fotográficos privados');
-select ok(not has_function_privilege('authenticated','public.submit_donation_intake_v2_catalogs_v1(uuid,uuid,public.donation_kind,text,text,jsonb,text,text,boolean,text,jsonb,numeric,uuid,jsonb,jsonb,text)','EXECUTE'), 'El cliente no puede saltarse la validación actual mediante la implementación interna');
+-- La implementación interna de catálogos se retiró en `202608200004` al quedarse sin
+-- llamadores: comprobar que ya no existe es más fuerte que comprobar sus privilegios.
+select ok(
+  not exists (
+    select 1 from pg_catalog.pg_proc as routine
+    join pg_catalog.pg_namespace as space on space.oid = routine.pronamespace
+    where space.nspname = 'public' and routine.proname = 'submit_donation_intake_v2_catalogs_v1'
+  ),
+  'La implementación interna sustituida ya no existe y no puede saltarse la validación actual'
+);
 select is((select count(*)::integer from public.donation_flow_catalogs()), 8, 'El flujo expone sus ocho catálogos autoritativos');
 select is((select jsonb_array_length(values_json) from public.donation_flow_catalogs() where key='donation_categories'), 13, 'Las trece categorías de la matriz están versionadas');
 select is((select jsonb_array_length(values_json) from public.donation_flow_catalogs() where key='coverage_departments'), 5, 'La cobertura inicial conserva los cinco departamentos definidos');

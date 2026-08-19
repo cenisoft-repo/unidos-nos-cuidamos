@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
 import { EVENT_ID } from "@/lib/constants";
+import { hasOperationalRole } from "@/lib/authorization";
 import { WarehouseConsole } from "@/components/warehouse-console";
 
 export const metadata: Metadata = { title: "Bodega y logística" };
@@ -19,7 +20,7 @@ export default async function WarehousePage() {
   const membershipsResult = await supabase.from("memberships").select("role").eq("user_id", user.id).eq("event_id", EVENT_ID).eq("active", true);
   assertSupabaseSuccess("membresia_bodega", [membershipsResult]);
   const roles = new Set((membershipsResult.data ?? []).map((item) => item.role));
-  if (!["warehouse_operator", "logistics_operator", "event_admin"].some((role) => roles.has(role))) redirect("/operaciones");
+  if (!hasOperationalRole(roles, ["warehouse_operator", "logistics_operator", "event_admin"])) redirect("/operaciones");
 
   // Las tablas sin `event_id` propio se acotan por su padre con un join interno.
   const results = await Promise.all([
@@ -49,7 +50,7 @@ export default async function WarehousePage() {
         shipments={(shipmentsResult.data ?? []) as never[]}
         deliveries={(deliveriesResult.data ?? []) as never[]}
         transferRequests={(transfersResult.data ?? []) as never[]}
-        canValidate={roles.has("verifier") || roles.has("event_admin")}
+        canValidate={hasOperationalRole(roles, ["verifier", "event_admin"])}
         userId={user.id}
       />
     </div>

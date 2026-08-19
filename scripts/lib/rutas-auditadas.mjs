@@ -15,7 +15,7 @@
  * dejaría la otra sin cubrir.
  */
 
-export const RUTAS_PUBLICAS = ["/", "/donar", "/reportar", "/seguimiento", "/transparencia", "/ingresar"];
+export const RUTAS_PUBLICAS = ["/", "/donar", "/reportar", "/seguimiento", "/transparencia", "/ingresar", "/registro"];
 
 /**
  * `clave` es el identificador en el informe; `ruta` es la URL real. Se separan
@@ -27,6 +27,8 @@ export const RUTAS_AUTENTICADAS = [
   { clave: "/operaciones/bodega", ruta: "/operaciones/bodega", correo: "bodega@rutasolidaria.local", rol: "warehouse_operator" },
   { clave: "/operaciones/tesoreria", ruta: "/operaciones/tesoreria", correo: "aprueba@rutasolidaria.local", rol: "treasury_approver" },
   { clave: "/operaciones/centros", ruta: "/operaciones/centros", correo: "admin@rutasolidaria.local", rol: "event_admin" },
+  { clave: "/operaciones/reportes", ruta: "/operaciones/reportes", correo: "bodega@rutasolidaria.local", rol: "warehouse_operator" },
+  { clave: "/operaciones/parametrizacion", ruta: "/operaciones/parametrizacion", correo: "superadmin@rutasolidaria.local", rol: "super_admin" },
 ];
 
 const CLAVE_SANDBOX = "RutaSolidaria2026!";

@@ -106,5 +106,127 @@ const { error: escalationError } = await partner.rpc("review_need_case", {
 });
 assert.ok(escalationError, "El aliado no puede elevar una necesidad a verificada");
 
+/*
+ * Escalamiento de privilegios (Fase 13). El aliado no puede administrar: ni asignarse
+ * un rol, ni desactivar a nadie, ni tocar catálogos, ni leer el padrón de cuentas.
+ * Se prueba contra la API real, con su sesión real, porque es ahí donde un cliente
+ * alterado intentaría hacerlo.
+ */
+const { error: selfRoleError } = await partner.rpc("assign_membership_role", {
+  p_user_id: "00000000-0000-0000-0000-000000000102",
+  p_organization_id: "20000000-0000-0000-0000-000000000002",
+  p_event_id: "10000000-0000-0000-0000-000000000001",
+  p_role: "event_admin",
+  p_active: true,
+});
+assert.ok(selfRoleError, "El aliado no puede asignarse un rol administrativo");
+
+const { error: superRoleError } = await partner.rpc("assign_membership_role", {
+  p_user_id: "00000000-0000-0000-0000-000000000102",
+  p_organization_id: "20000000-0000-0000-0000-000000000002",
+  p_event_id: "10000000-0000-0000-0000-000000000001",
+  p_role: "super_admin",
+  p_active: true,
+});
+assert.ok(superRoleError, "El aliado no puede concederse autoridad global");
+
+const { error: grantExposedError } = await partner.rpc("grant_super_admin", {
+  p_email: "aliado@rutasolidaria.local",
+  p_organization_id: "20000000-0000-0000-0000-000000000002",
+  p_event_id: "10000000-0000-0000-0000-000000000001",
+  p_reason: "Intento desde el navegador",
+});
+assert.ok(grantExposedError, "La concesión de SUPER_ADMIN no está expuesta al cliente");
+
+const { error: catalogWriteError } = await partner.rpc("manage_catalog_values", {
+  p_key: "units",
+  p_values: ["litro"],
+  p_note: "Intento no autorizado",
+});
+assert.ok(catalogWriteError, "El aliado no puede modificar configuración");
+
+const { data: partnerRoster } = await partner.rpc("platform_users_admin", {
+  p_event_id: "10000000-0000-0000-0000-000000000001",
+});
+assert.equal(partnerRoster?.length ?? 0, 0, "El aliado no lee el padrón de cuentas");
+
+const { data: partnerMemberships } = await partner.from("memberships").select("user_id,role");
+assert.ok(
+  (partnerMemberships ?? []).every((row) => row.user_id === "00000000-0000-0000-0000-000000000102"),
+  "El aliado solo ve sus propias membresías",
+);
+
 await partner.auth.signOut();
-console.log("RLS PASS: mapa/logística seguros, anonimato, aislamiento de tenant y escalamiento bloqueado");
+
+/*
+ * Alcance transversal de SUPER_ADMIN (Fase 12). No es un bypass: pasa por las mismas
+ * políticas, con la misma sesión de PostgREST que cualquiera. Lo que cambia es que las
+ * compuertas lo reconocen sin exigirle una membresía por organización.
+ */
+const platform = client();
+const { error: superSignInError } = await platform.auth.signInWithPassword({
+  email: "superadmin@rutasolidaria.local",
+  password: "RutaSolidaria2026!",
+});
+assert.equal(superSignInError, null, "La cuenta de autoridad global debe autenticar");
+
+const { data: allOrganizations, error: allOrgError } = await platform.from("organizations").select("id,slug");
+assert.equal(allOrgError, null);
+assert.ok(allOrganizations.length >= 2, "SUPER_ADMIN lee todas las organizaciones");
+assert.ok(
+  allOrganizations.some((row) => row.slug === "red-humanitaria-demo")
+    && allOrganizations.some((row) => row.slug === "aliados-unidos-demo"),
+  "SUPER_ADMIN atraviesa el aislamiento de tenant en lectura",
+);
+
+const { data: allLocations, error: allLocationsError } = await platform.from("inventory_locations").select("id,organization_id");
+assert.equal(allLocationsError, null);
+assert.ok(
+  new Set(allLocations.map((row) => row.organization_id)).size >= 2,
+  "SUPER_ADMIN consulta puntos de más de una organización",
+);
+
+const { error: movementsError } = await platform.from("stock_movements").select("id").limit(5);
+assert.equal(movementsError, null, "SUPER_ADMIN consulta los movimientos globales");
+
+const { data: roster, error: rosterError } = await platform.rpc("platform_users_admin", {
+  p_event_id: "10000000-0000-0000-0000-000000000001",
+});
+assert.equal(rosterError, null);
+assert.ok(roster.length >= 6, "SUPER_ADMIN lee el padrón completo de cuentas");
+assert.ok(
+  roster.some((row) => row.is_super_admin === true),
+  "El padrón identifica quién tiene autoridad global",
+);
+
+/*
+ * Fase 8: SUPER_ADMIN no es `RLS OFF`. Sin política de UPDATE sobre el inventario, un
+ * intento de editar existencias por tabla no toca ninguna fila aunque quien lo intente
+ * sea la autoridad global. El Kardex sigue siendo la única vía.
+ */
+const someLot = (await platform.from("inventory_lots").select("id,quantity_initial").limit(1)).data?.[0];
+assert.ok(someLot, "El sandbox tiene al menos un lote para probar la escritura directa");
+const { data: forcedStock } = await platform
+  .from("inventory_lots")
+  .update({ quantity_initial: Number(someLot.quantity_initial) + 999 })
+  .eq("id", someLot.id)
+  .select("id");
+assert.equal(forcedStock?.length ?? 0, 0, "SUPER_ADMIN no puede escribir existencias saltándose el Kardex");
+const { data: untouchedLot } = await platform.from("inventory_lots").select("quantity_initial").eq("id", someLot.id).single();
+assert.equal(
+  Number(untouchedLot.quantity_initial),
+  Number(someLot.quantity_initial),
+  "La existencia permanece exactamente como estaba",
+);
+
+const { error: selfPromotionError } = await platform.rpc("assign_membership_role", {
+  p_user_id: "00000000-0000-0000-0000-000000000106",
+  p_organization_id: "20000000-0000-0000-0000-000000000001",
+  p_event_id: "10000000-0000-0000-0000-000000000001",
+  p_role: "auditor",
+  p_active: true,
+});
+assert.ok(selfPromotionError, "Ni SUPER_ADMIN edita su propia membresía");
+
+await platform.auth.signOut();
+console.log("RLS PASS: mapa/logística seguros, anonimato, aislamiento de tenant, escalamiento bloqueado y alcance global comprobado");
