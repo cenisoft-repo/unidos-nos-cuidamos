@@ -1,6 +1,6 @@
 # Estado comprobado
 
-Fecha: 2026-08-21 · Puerta: **G1**, sandbox con datos 100 % sintéticos.
+Fecha: 2026-08-21 (segundo despliegue del día) · Puerta: **G1**, sandbox con datos 100 % sintéticos.
 G2 y G3 siguen bloqueadas: no deben incorporarse operadores, PII, dinero ni
 comunicación institucional.
 
@@ -9,19 +9,29 @@ entrega de despacho, trazabilidad y tesorería fusionada con la consolidación d
 logística, más SUPER_ADMIN y la parametrización; el front se desplegó por la
 integración de Git de Vercel y el alias de producción apunta a ese build.
 
-**Lo del 20 y el 21 de agosto no está desplegado, ni comiteado.** La solicitud
-logística generalizada (`202608210001`), el recaudo por pasarela (`202608210002`)
-y la puerta de habilitación de organizaciones (`202608220001`) están comprobados
-en local y **solo en local**: son 43 migraciones en el árbol contra las que había
-en producción el 19. Comprobar el remoto con `supabase migration list`, nunca
-contra este documento.
+**Desplegado el 2026-08-21 en dos tandas.** `main` está en `9bba69f` y el remoto
+en **48/48 migraciones, cero pendientes**. La segunda tanda llevó cinco
+migraciones: idempotencia acotada por organización, código de seguimiento
+publicado, saldo por lote materializado, `logistics_requests` en una sola pasada y
+la guarda de SUPER_ADMIN.
 
-**Aviso para el despliegue de `202608220001`:** al aplicarla, toda organización
-que ya esté `verified` lo sigue estando —el disparador sólo vigila la subida—,
-pero cualquier autorregistro posterior nacerá sin habilitar y **su punto de acopio
-dejará de publicarse hasta que alguien lo decida**. Si en producción hubiera
-organizaciones autorregistradas antes de esta fecha, siguen habilitadas: cerrarlas
-es una decisión humana, no un efecto de la migración.
+**Lo público no se movió una fila** al desplegar: 26 centros de acopio y 32
+proyecciones de mapa, idénticos antes y después. Materializar el Kardex no cambió
+ninguna cifra visible, que era el requisito.
+
+**Verificado en producción tras desplegar:** el código de aporte que la propia
+plataforma publica —con sufijo por artículo— pasa de devolver `[]` a devolver 8
+etapas; el botón de código de práctica carga un código real y resuelve en 10
+etapas; el Excel público ya no promete «excluye direcciones exactas» mientras las
+publica; `robots.txt` cierra el sitio mientras sirva datos sintéticos y la 404
+responde en español.
+
+**Los dos P0 de seguridad quedan desplegados pero no ejercitados en producción.**
+`G-071` (SUPER_ADMIN concedible con la marca a mano) y `G-069` (la idempotencia
+atravesaba organizaciones) están respaldados por pruebas locales validadas
+rompiéndolas y por la aplicación limpia de sus migraciones. Ejercitar los exploits
+allí habría exigido la clave `service_role` de producción y, en un caso, escribir
+datos. No se hizo, y se declara.
 
 **La plataforma sigue sin recaudar.** El único canal implementado es el de
 práctica, que no mueve dinero. Conectar un proveedor real depende de contrato,
