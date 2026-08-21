@@ -193,3 +193,19 @@ Consecuencia, y son tres, en orden de lo que costó verlas:
 La puerta se validó rompiéndola: reintroducido el `verified = true` del autorregistro, 7 de las 30 comprobaciones se ponen en rojo. Un control que no puede fallar no prueba nada.
 
 Lo que esto **no** decide: cuándo una organización merece la habilitación. Eso es la política de aceptación (`G-003`) y sigue siendo una decisión humana pendiente. Lo que existe ahora es que sólo una persona con rol y sustento puede tomarla, y que queda escrita.
+
+## ADR-023 · 2026-08-21 · La clave de idempotencia pertenece a una organización, y la búsqueda tiene que decirlo
+
+Decisión: las cuatro funciones que resuelven idempotencia —`receive_donation`, `reserve_lot_quantity`, `create_shipment` y `reconcile_sandbox_payment`— acotan su búsqueda por la organización que ya conocen a partir de sus propios parámetros. **No se añade ningún índice.**
+
+Motivo, y es un cambio de diagnóstico. El loop de escala anotaba esto como B5, un problema de rendimiento: las cuatro buscan `idempotency_key` sin aportar `organization_id`, el único índice es `unique (organization_id, idempotency_key)` y sin prefijo aprovechable la búsqueda recorre la tabla entera —43 ms sobre 980.007 movimientos, medido en F0—. La solución propuesta eran cuatro índices, «el mejor coste/beneficio de toda la lista».
+
+Al ir a ponerlos apareció que el defecto no es de rendimiento. La unicidad es **por organización**, así que dos organizaciones pueden usar la misma clave legítimamente, y las cuatro búsquedas son la **primera sentencia** de su función, antes de resolver ninguna organización. Buscan en todas. Comprobado contra la base antes de escribir nada:
+
+> La organización 2 pide recibir 7 litros con una clave que la organización 1 ya usó. Se le devuelve **el lote de la organización 1**; queda **un** movimiento de Kardex donde debería haber dos; y su inventario real es **0 litros** mientras cree haber recibido 7.
+
+Es decir: el Kardex —la fuente de verdad, regla innegociable número 1— pierde una recepción en silencio, y una organización recibe el identificador de inventario de otra. `reconcile_sandbox_payment` hace lo mismo sobre el **libro financiero**: devuelve el identificador de un asiento ajeno.
+
+Consecuencia: acotar por organización cierra la colisión **y** hace utilizable el índice compuesto que ya existía, así que el problema de rendimiento desaparece sin añadir un solo índice nuevo que mantener en tablas que crecen a 10⁸. Es estrictamente mejor que la solución que el propio loop proponía, y es la razón por la que la línea base de F0 va antes que cualquier optimización: sin ir a mirar el sitio exacto, se habrían puesto cuatro índices sobre un defecto de corrección y el defecto habría seguido ahí, ahora rápido.
+
+Se cambió **únicamente la sentencia de búsqueda** de cada función; el resto del cuerpo se tomó de la definición viva para que nada más se moviera. La puerta se validó rompiéndola: devuelta una función a la búsqueda sin acotar, seis de las once comprobaciones se ponen en rojo. Y al romperla se descubrió que la guarda estructural que había escrito **no servía** —buscaba `organization_id` en el cuerpo entero, donde aparece de todas formas más abajo— y hubo que afilarla para que mirase solo dentro de la sentencia. Un control que no puede fallar no prueba nada, y este no podía hasta que se intentó.

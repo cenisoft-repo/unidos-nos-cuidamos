@@ -1,0 +1,234 @@
+{
+  "tomada": "2026-08-21T08:13:27.841Z",
+  "volumen": {
+    "movimientos": 980007,
+    "lotes": 20004,
+    "solicitudes": 10000,
+    "auditoria": 1031334,
+    "operadores": 1036
+  },
+  "margen": 1.5,
+  "medidas": [
+    {
+      "id": "bodega:posiciones-kardex",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/bodega",
+      "nota": "B6 · el Kardex se agrega entero en cada lectura",
+      "agotada": false,
+      "mediana": 204.401,
+      "p95": 212.962,
+      "recorridos_secuenciales": [
+        {
+          "tabla": "stock_movements",
+          "filas": 326669
+        },
+        {
+          "tabla": "delivery_items",
+          "filas": 0
+        },
+        {
+          "tabla": "shipment_items",
+          "filas": 0
+        },
+        {
+          "tabla": "allocations",
+          "filas": 1
+        }
+      ]
+    },
+    {
+      "id": "bodega:solicitudes-logisticas",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/bodega",
+      "nota": "B6 · subconsulta correlacionada por línea de solicitud",
+      "agotada": true,
+      "mediana": null,
+      "p95": null,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "bodega:disponibilidad-compartida",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/bodega",
+      "nota": "atraviesa el tenant con compuerta explícita (ADR-016)",
+      "agotada": false,
+      "mediana": 1120.674,
+      "p95": 1154.138,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "bodega:conciliacion-despachos",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/bodega",
+      "nota": "líneas de conciliación de todos los despachos del evento",
+      "agotada": false,
+      "mediana": 4.766,
+      "p95": 5.518,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "bodega:asignaciones",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/bodega",
+      "nota": "sin cota declarada (G-057)",
+      "agotada": false,
+      "mediana": 0.083,
+      "p95": 0.105,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "bodega:despachos",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/bodega",
+      "nota": "sin cota declarada (G-057)",
+      "agotada": false,
+      "mediana": 0.135,
+      "p95": 0.16,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "bodega:entregas",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/bodega",
+      "nota": "sin cota declarada (G-057)",
+      "agotada": false,
+      "mediana": 0.099,
+      "p95": 0.102,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "bodega:aportes-por-recibir",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/bodega",
+      "nota": "sin cota declarada (G-057)",
+      "agotada": false,
+      "mediana": 9.764,
+      "p95": 11.043,
+      "recorridos_secuenciales": [
+        {
+          "tabla": "donation_items",
+          "filas": 20004
+        },
+        {
+          "tabla": "donations",
+          "filas": 20002
+        }
+      ]
+    },
+    {
+      "id": "consola:necesidades-abiertas",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones",
+      "nota": "con cota de 8 declarada",
+      "agotada": false,
+      "mediana": 0.056,
+      "p95": 0.064,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "consola:aportes-en-cola",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones",
+      "nota": "cola de verificación",
+      "agotada": false,
+      "mediana": 0.041,
+      "p95": 0.046,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "consola:conteo-auditoria",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones",
+      "nota": "B8 · conteo sobre la tabla que más crece",
+      "agotada": false,
+      "mediana": 34.157,
+      "p95": 38.933,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "tesoreria:saldo",
+      "grupo": "camino caliente",
+      "pantalla": "/operaciones/tesoreria",
+      "nota": "B10 · suma sin agrupar por moneda",
+      "agotada": false,
+      "mediana": 1.673,
+      "p95": 1.943,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "portal:acopios-publicos",
+      "grupo": "camino caliente",
+      "pantalla": "/",
+      "nota": "ejecutable por anon · G-055 le añadió la compuerta de habilitación",
+      "agotada": false,
+      "mediana": 3.09,
+      "p95": 3.314,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "portal:necesidades-publicadas",
+      "grupo": "camino caliente",
+      "pantalla": "/",
+      "nota": "tabla legible por anon y en Realtime",
+      "agotada": false,
+      "mediana": 0.079,
+      "p95": 0.081,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "portal:mapa-logistico",
+      "grupo": "camino caliente",
+      "pantalla": "/",
+      "nota": "proyección del mapa, legible por anon",
+      "agotada": false,
+      "mediana": 0.034,
+      "p95": 0.04,
+      "recorridos_secuenciales": [
+        {
+          "tabla": "public_logistics_projections",
+          "filas": 24
+        }
+      ]
+    },
+    {
+      "id": "idempotencia:movimiento",
+      "grupo": "idempotencia (B5)",
+      "pantalla": "receive_donation",
+      "nota": "acotada por organización (ADR-023): el índice compuesto que ya existía pasa a servir",
+      "agotada": false,
+      "mediana": 0.099,
+      "p95": 0.145,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "idempotencia:asignacion",
+      "grupo": "idempotencia (B5)",
+      "pantalla": "reserve_lot_quantity",
+      "nota": "acotada por la organización dueña del lote (ADR-023)",
+      "agotada": false,
+      "mediana": 0.034,
+      "p95": 0.039,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "idempotencia:despacho",
+      "grupo": "idempotencia (B5)",
+      "pantalla": "create_shipment",
+      "nota": "acotada por la organización de la bodega de origen (ADR-023)",
+      "agotada": false,
+      "mediana": 0.036,
+      "p95": 0.062,
+      "recorridos_secuenciales": []
+    },
+    {
+      "id": "idempotencia:financiero",
+      "grupo": "idempotencia (B5)",
+      "pantalla": "reconcile_sandbox_payment",
+      "nota": "acotada por la organización del fondo (ADR-023)",
+      "agotada": false,
+      "mediana": 0.026,
+      "p95": 0.073,
+      "recorridos_secuenciales": []
+    }
+  ]
+}

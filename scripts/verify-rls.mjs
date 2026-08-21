@@ -203,6 +203,36 @@ assert.deepEqual(
   "Quien solicita solo ve su propia organización",
 );
 
+/*
+ * El Kardex por lote se lee por una VISTA, y una vista solo respeta la RLS de lo que hay
+ * debajo si esta declarada `security_invoker`. `create or replace view` **no conserva** esa
+ * opcion si no se repite, asi que basta con reescribir la vista sin ella para convertirla en
+ * una del dueno, que ignora la RLS de todas sus tablas y publica el inventario de la red
+ * entera a cualquier sesion autenticada.
+ *
+ * Paso exactamente eso al materializar el saldo por lote (B6). No lo cazo ninguna prueba
+ * porque este arnes no miraba esta vista: comprobaba las tablas y las RPC, no las vistas. Esta
+ * comprobacion existe para que no vuelva a pasar en silencio, aqui ni en ninguna otra vista
+ * que se anada.
+ */
+const vistasQueDebenRespetarElTenant = ["inventory_lot_positions", "inventory_lot_balances"];
+for (const vista of vistasQueDebenRespetarElTenant) {
+  const { data: filas, error: vistaError } = await requester.from(vista).select("organization_id").limit(1000);
+  assert.equal(vistaError, null, `${vista} debe poder leerse con sesion`);
+  const organizaciones = new Set((filas ?? []).map((fila) => fila.organization_id));
+  assert.ok(
+    organizaciones.size <= 1,
+    `${vista} filtra por organizacion: una cuenta de una sola organizacion vio ${organizaciones.size}`,
+  );
+  for (const organizacion of organizaciones) {
+    assert.equal(
+      organizacion,
+      "20000000-0000-0000-0000-000000000002",
+      `${vista} solo devuelve filas de la organizacion de quien consulta`,
+    );
+  }
+}
+
 const { data: sharedAvailability, error: availabilityError } = await requester.rpc("shared_stock_availability", {
   p_event_id: "10000000-0000-0000-0000-000000000001",
   p_category: null,

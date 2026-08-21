@@ -21,6 +21,8 @@
     "db:backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup-local.ps1",
     "db:restore:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restore-local.ps1",
     "db:test": "supabase test db",
+    "seed:volumen": "node scripts/seed-volumen.mjs",
+    "verify:carga": "node scripts/verify-carga.mjs",
     "test:rls": "node --env-file=.env.local scripts/verify-rls.mjs",
     "test:concurrency": "node --env-file=.env.local scripts/verify-intake-concurrency.mjs",
     "test:concurrency:reservation": "node --env-file=.env.local scripts/verify-reservation-concurrency.mjs",

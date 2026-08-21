@@ -12,6 +12,108 @@
 
 ## Delta último ciclo
 
+### F0, F3 a medias, y cinco brechas de veracidad · 2026-08-21
+
+**Desplegado** (`23de036`, 60 archivos): 43/43 migraciones y front publicado, con diff **cero**
+sobre lo publico. Verificado con 300 comprobaciones en 6 superficies y un refutador por
+hallazgo: de 16 reportados sobrevivieron 9. Una superficie no se comprobo —el barrido de
+aislamiento de datos lo bloqueo el clasificador de seguridad—.
+
+**Lo que sigue esperando una mano humana: `G-061`, P0.** La portada de produccion muestra «—»
+en sus tres cifras porque `NEXT_PUBLIC_EVENT_SLUG` no esta puesta en Vercel y `EVENT_SLUG` cae
+al valor local. La logica es del 14 y 16 de agosto; el despliegue no la toco.
+
+**F0 cerrada.** `seed-volumen.mjs` (980.007 movimientos, **1.031.334 de auditoria** — B8
+medido) y `verify-carga.mjs`, que mide 19 consultas con `EXPLAIN ANALYZE`, guarda el plan y
+falla si una se sale de su linea base. Con techo por consulta: la primera medida se colgo
+veinte minutos, y una puerta que puede colgarse no es una puerta.
+
+**Cerradas.** `G-062` redireccion abierta (`/\` que el navegador lleva a otro dominio);
+`G-069` **la idempotencia atravesaba organizaciones** —una recibia el lote de otra y el Kardex
+perdia una recepcion en silencio— que el loop tenia anotado como B5, un problema de
+rendimiento a resolver con cuatro indices, y resulto ser correccion (ADR-023): acotar por
+organizacion lo cierra **y** hace utilizable el indice existente, 74,3 -> 0,49 ms sin anadir
+ninguno; `G-063` el Excel prometia «excluye direcciones exactas» y las publicaba; `G-066` la
+plataforma publicaba codigos de aporte que despues no reconocia —6 de 11 en produccion—;
+`G-065` el boton de codigo de practica cargaba una constante muerta.
+
+**`G-068` mitigada, no cerrada.** `202608220004` materializa el saldo por lote con disparador
+desde sus **dos** fuentes (el Kardex y `delivery_items`, porque `register_delivery` no escribe
+nada contra el lote de origen). `logistics_requests` pasa de **no terminar en 20 s** a 3.186 ms;
+posiciones 213 -> 44 ms; disponibilidad compartida 1.154 -> 810 ms; escritura +15 %, declarado.
+`202608220005` reescribe `logistics_requests` en una sola pasada de conjunto. Quedan dos
+consultas por encima de 200 ms hasta confirmar esa ultima medida.
+
+**`G-070`, y es lo mas importante de la sesion.** Al materializar, `create or replace view`
+**no conserva** `security_invoker` si no se repite. Lo omiti, la vista paso a ser del dueno y
+una cuenta de UNA organizacion leia lotes de **23** por la API. Las 552 pruebas verdes no lo
+vieron porque `verify-rls.mjs` comprobaba tablas y RPC, **no vistas**. Corregido en tres capas
+y el arnes ampliado; validado rompiendolo.
+
+**El patron de la sesion.** De las puertas rotas a proposito, **cuatro destaparon que la propia
+asercion no probaba nada**: la guarda estructural de `G-069` miraba el cuerpo entero de la
+funcion; el catalogo de carga media la consulta vieja y me hizo reportar un 10 % falso; la
+prueba de `G-065` pasaba con el defecto puesto porque en local el codigo sembrado si existe; y
+la de la cache describia un diseno que ya no era el correcto. Sin romperlas, cuatro cosas
+falsas habrian quedado reportadas como verificadas.
+
+- Evidencia: 72 unitarias · **567 pgTAP en doce archivos** · RLS con vistas · dos concurrencias
+  · build · 58 Playwright.
+- **Abiertas:** `G-061` P0 (configuracion en Vercel), `G-064` P1 (canal de practica sin secreto
+  en produccion), `G-067` en parte (`/operaciones%2f` da 500 en Vercel y **no se reproduce en
+  local**), `G-068` P1 (la puerta de F3).
+
+
+### Desplegado, y F0 + dos deltas de seguridad · 2026-08-21
+
+**Desplegado a produccion** (commit `23de036`, 60 archivos): 43/43 migraciones aplicadas y
+front publicado. El diff sobre lo publico fue **cero** —32 proyecciones y 27 acopios,
+identicos antes y despues— porque toda organizacion de produccion ya estaba habilitada.
+Verificado con 300 comprobaciones sobre 6 superficies, cada hallazgo pasado por un refutador:
+de 16 reportados sobrevivieron 9. **Una superficie no se comprobo**: el barrido de
+aislamiento de datos lo bloqueo el clasificador de seguridad.
+
+**`G-061` · P0, y es tuyo, no de codigo.** La portada de produccion muestra «—» en sus tres
+cifras: `NEXT_PUBLIC_EVENT_SLUG` no esta puesta en Vercel y `EVENT_SLUG` cae al valor local
+`simulacion-andina-2026`, que no existe alli. El evento real es
+`ejercicio-coordinacion-sandbox-2026`. La logica es del 14 y 16 de agosto; el despliegue no
+la toco. El codigo se porta bien —enmudece en vez de inventar— pero la portada lleva dias en
+blanco mientras `/transparencia` publica 11 aportes.
+
+**F0 cerrada.** `seed-volumen.mjs` siembra en 125 s: 980.007 movimientos y **1.031.334
+eventos de auditoria** —mas auditoria que operacion, que es B8 medido— con cero posiciones de
+Kardex negativas. `verify-carga.mjs` mide 19 consultas con `EXPLAIN ANALYZE` y guarda su
+plan. Tres incumplen la puerta de 200 ms de F3: `logistics_requests` **no termina en 20 s**,
+`shared_stock_availability` 1.233 ms y las posiciones del Kardex 273 ms con `Seq Scan` sobre
+326.669 filas. Seis recorren alguna tabla entera. Hubo que ponerle techo al arnes: la primera
+medida se colgo veinte minutos, y una puerta que puede colgarse no es una puerta.
+
+**`G-062` · P1 cerrada.** Redireccion abierta: `next` se validaba con `startsWith("//")` y
+dejaba pasar la barra invertida, que el navegador resuelve a otro dominio. Ahora se resuelve
+con el analizador de URL contra un origen centinela, en vez de enumerar ataques. 9 unitarias
+y un E2E que ingresa de verdad con un destino hostil.
+
+**`G-069` · P0 cerrada, y cambia el diagnostico de B5 (ADR-023).** El loop anotaba las cuatro
+busquedas de idempotencia como un problema de rendimiento a resolver con cuatro indices. Al
+ir a ponerlos aparecio que la unicidad es **por organizacion** y las cuatro busquedas son la
+primera sentencia de su funcion: buscaban en todas. Comprobado: la organizacion 2 recibe 7
+litros con una clave que la 1 ya uso, se le devuelve **el lote de la 1**, queda un movimiento
+de Kardex donde deberian ser dos y su inventario real es 0. `reconcile_sandbox_payment` hacia
+lo mismo sobre el libro financiero. Acotar por organizacion cierra la colision **y** hace
+utilizable el indice que ya existia: **no se añadio ningun indice**.
+
+**Dos veces se rompio una puerta a proposito y valio la pena las dos.** En `G-069` la ruptura
+destapo que la guarda estructural que habia escrito no servia: buscaba `organization_id` en
+el cuerpo entero, donde aparece igualmente mas abajo, asi que pasaba tambien con el defecto
+puesto. Hubo que afilarla para que mirase solo dentro de la sentencia.
+
+- Evidencia: 72 unitarias · **543 pgTAP en diez archivos** · lint y typecheck verdes.
+- **Abiertas nuevas:** `G-061` P0 (portada muda en produccion, es configuracion),
+  `G-063` P1 (el Excel publico promete lo que no cumple), `G-064` P1 (el canal de practica no
+  tiene secreto en produccion), `G-065`/`G-066`/`G-067` P2 de superficie publica, `G-068` P1
+  (las tres consultas que incumplen la puerta de F3).
+
+
 ### La habilitación de una organización tiene una sola puerta · 2026-08-21 (G-055, ADR-022)
 
 - **El autorregistro se concedía a sí mismo la confianza.** `activate_ally_registration`
