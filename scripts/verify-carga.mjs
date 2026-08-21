@@ -70,6 +70,10 @@ function psql(sql) {
 // camino caliente —lo que se ejecuta al abrir una pantalla— y las cuatro últimas son las
 // búsquedas de idempotencia de B5, que corren en cada recepción y en cada reserva.
 
+// Marca para las consultas que corren dentro de una funcion `security definer`: no se cambia
+// de rol, porque en produccion tampoco se cambia.
+const DENTRO_DE_DEFINER = 'definer';
+
 const ACTOR_BODEGA = `(select user_id from public.memberships where role = 'warehouse_operator' and active limit 1)`;
 const ACTOR_ADMIN = `(select user_id from public.memberships where role = 'event_admin' and active limit 1)`;
 
@@ -228,7 +232,7 @@ const CATALOGO = [
     grupo: "idempotencia (B5)",
     pantalla: "receive_donation",
     nota: "acotada por organización (ADR-023): el índice compuesto que ya existía pasa a servir",
-    actor: null,
+    actor: DENTRO_DE_DEFINER,
     sql: `select l.id from public.inventory_lots l
           join public.stock_movements s on s.lot_id = l.id
           where s.idempotency_key = 'volumen:LOTVOL0000009999:receipt'
@@ -241,7 +245,7 @@ const CATALOGO = [
     grupo: "idempotencia (B5)",
     pantalla: "reserve_lot_quantity",
     nota: "acotada por la organización dueña del lote (ADR-023)",
-    actor: null,
+    actor: DENTRO_DE_DEFINER,
     sql: `select existing.id from public.allocations as existing
           where existing.idempotency_key = 'no-existe-a-proposito'
             and existing.organization_id = '20000000-0000-0000-0000-000000000001'`,
@@ -251,7 +255,7 @@ const CATALOGO = [
     grupo: "idempotencia (B5)",
     pantalla: "create_shipment",
     nota: "acotada por la organización de la bodega de origen (ADR-023)",
-    actor: null,
+    actor: DENTRO_DE_DEFINER,
     sql: `select existing.id from public.shipments as existing
           where existing.idempotency_key = 'no-existe-a-proposito'
             and existing.organization_id = '20000000-0000-0000-0000-000000000001'`,
@@ -261,7 +265,7 @@ const CATALOGO = [
     grupo: "idempotencia (B5)",
     pantalla: "reconcile_sandbox_payment",
     nota: "acotada por la organización del fondo (ADR-023)",
-    actor: null,
+    actor: DENTRO_DE_DEFINER,
     sql: `select id from public.financial_transactions
           where idempotency_key = 'no-existe-a-proposito'
             and organization_id = '20000000-0000-0000-0000-000000000001'`,
@@ -273,14 +277,32 @@ const CATALOGO = [
 // Una sola sesión por medida: fija el actor, ejecuta el plan y devuelve el JSON. El `set` es
 // local a la transacción para que una medida no contamine la siguiente.
 function medirUna(entrada) {
-  const fijarActor = entrada.actor
+  const fijarActor = entrada.actor && entrada.actor !== DENTRO_DE_DEFINER
     ? `select set_config('request.jwt.claims', json_build_object('sub', ${entrada.actor}, 'role', 'authenticated')::text, true);`
     : `select set_config('request.jwt.claims', '{"role":"anon"}', true);`;
   // Techo obligatorio. Sin él, una consulta patológica —y la línea base existe justamente
   // para encontrarlas— cuelga el arnés en vez de reportarla, y una puerta que puede colgarse
   // no es una puerta. Pasarse del techo es un resultado, no un fallo del arnés.
+  // G-072 · El orden importa y no es intercambiable. El actor se resuelve ANTES de cambiar de
+  // rol, porque esa subconsulta lee `memberships` y con la RLS puesta no devolveria nada; y el
+  // rol se cambia ANTES del EXPLAIN, porque es lo unico que hace que las politicas se apliquen.
+  //
+  // La primera version de este arnes no cambiaba de rol: entraba como `postgres`, que tiene
+  // `rolbypassrls`, asi que TODA la linea base se tomo sobre planes sin un solo predicado de
+  // politica. Las cifras describian un sistema que nadie usa, y el coste de las compuertas
+  // —que es justo B7, lo que se sospechaba que quedaba por optimizar— quedaba fuera de la
+  // medida por construccion.
+  // Tres situaciones distintas, y confundirlas mide algo que no ocurre:
+  //   · un actor con sesion  -> `authenticated`, con la RLS aplicandose
+  //   · sin actor            -> `anon`, igual con RLS
+  //   · DENTRO de una funcion `security definer` -> el dueno, sin RLS, porque asi corre de
+  //     verdad. Las cuatro busquedas de idempotencia son de este tipo: viven dentro de
+  //     `receive_donation` y compania. Marcarlas como `anon` al arreglar la medida fue un
+  //     error de modelado y la base lo dijo: permission denied for table inventory_lots.
+  const rol = entrada.actor === DENTRO_DE_DEFINER ? null : entrada.actor ? 'authenticated' : 'anon';
   const sql =
     `begin; set local statement_timeout = '${TECHO_MS}ms'; ${fijarActor} ` +
+    (rol ? `set local role ${rol}; ` : '') +
     `explain (analyze, buffers, format json) ${entrada.sql}; rollback;`;
   let salida;
   try {
@@ -390,10 +412,20 @@ for (const medida of medidas) {
     console.log(`  ${grupoActual.toUpperCase()}`);
   }
   if (medida.agotada) {
+    // G-072 · Una consulta que deja de terminar es la peor regresion que existe, y antes
+    // atravesaba la puerta en verde porque este `continue` saltaba la contabilidad de roturas.
+    // La puerta imprimia «Ninguna consulta se salio de su linea base» mientras una consulta
+    // del camino caliente no respondia. Es peor que no tener puerta: deja constancia escrita
+    // de lo contrario de lo que pasa.
+    const previaAgotada = base?.medidas?.find((m) => m.id === medida.id)?.agotada === true;
+    const veredictoAgotada = previaAgotada
+      ? '  (ya lo estaba en la línea base)'
+      : '  ROTA · antes terminaba';
     console.log(
-      `    ${medida.id.padEnd(anchoId)}  AGOTADA · no termina en ${(TECHO_MS / 1000).toFixed(0)} s  ← ${medida.nota}`,
+      `    ${medida.id.padEnd(anchoId)}  AGOTADA · no termina en ${(TECHO_MS / 1000).toFixed(0)} s${veredictoAgotada}  ← ${medida.nota}`,
     );
     agotadas += 1;
+    if (!previaAgotada && base) roto += 1;
     continue;
   }
   const previa = base?.medidas?.find((m) => m.id === medida.id);
@@ -440,8 +472,15 @@ if (escribir) {
   console.log("  A partir de ahora `npm run verify:carga` falla si una consulta se sale de ella.");
 } else if (roto > 0) {
   console.error("");
-  console.error(`  ${roto} consulta(s) por encima de su línea base. La puerta de carga está ROJA.`);
+  console.error(`  ${roto} consulta(s) rota(s) respecto de su línea base. La puerta de carga está ROJA.`);
   process.exitCode = 1;
+} else if (agotadas > 0) {
+  console.log("");
+  console.log(
+    `  Ninguna consulta empeoró respecto de su línea base, pero ${agotadas} sigue(n) sin terminar
+` +
+      `  en ${(TECHO_MS / 1000).toFixed(0)} s. La puerta de F3 no está cerrada.`,
+  );
 } else {
   console.log("");
   console.log("  Ninguna consulta se salió de su línea base.");

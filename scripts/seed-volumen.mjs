@@ -26,12 +26,7 @@
 // `--muestra-rpc` que recorría casos por las RPC reales y comparaba; esa bandera nunca se
 // implementó. Cobrar la concesión de saltarse las RPC y no entregar la contrapartida es peor
 // que la concesión, así que aquí queda escrito el hueco en vez de una promesa.
-//
-// Y otro hueco del mismo tipo (`G-073`): el reparto en el tiempo que se pretende más abajo
-// **no funciona**. En la etapa de movimientos, `g` viene de `generate_series(1, 1)`, o sea la
-// constante 1, así que las recepciones comparten una sola marca de reloj y el resto cae en 25.
-// Con eso NO se puede ensayar la partición por rango temporal de B8, aunque el comentario de
-// esa etapa diga que para eso está.
+
 //
 // SEGURIDAD
 // ---------
@@ -63,6 +58,18 @@ const ESCALA = {
   lotes: entero("VOLUMEN_LOTES", 20_000),
   movimientos: entero("VOLUMEN_MOVIMIENTOS", 1_000_000),
   solicitudes: entero("VOLUMEN_SOLICITUDES", 10_000),
+  // G-072 - Diez de las diecinueve consultas del catalogo se cronometraban sobre tablas que
+  // este sembrador dejaba vacias: deliveries en 0, donation_intakes en 0,
+  // financial_transactions en 0. La cabecera del fichero de linea base decia «980.007
+  // movimientos» y daba a entender que las diecinueve se midieron a esa escala. Diez fijaban
+  // como referencia el coste de una tabla vacia, y el primer dia que tuvieran datos reales la
+  // puerta se habria puesto roja por haber empezado a existir.
+  necesidades: entero("VOLUMEN_NECESIDADES", 2_000),
+  asignaciones: entero("VOLUMEN_ASIGNACIONES", 5_000),
+  despachos: entero("VOLUMEN_DESPACHOS", 2_000),
+  entregas: entero("VOLUMEN_ENTREGAS", 1_000),
+  aportes: entero("VOLUMEN_APORTES", 5_000),
+  movimientosFinancieros: entero("VOLUMEN_FINANCIEROS", 3_000),
 };
 
 // Los movimientos se reparten por lote: uno de recepción y el resto en pares reserva/liberación,
@@ -304,9 +311,12 @@ select
   'volumen:' || lote.lot_code || ':receipt',
   'Recepción del ejercicio de carga',
   lote.received_by,
-  now() - ((g % 180) || ' days')::interval
+  -- G-073 · Antes la fecha se derivaba de un contador que salia de generate_series(1, 1),
+  -- o sea la constante 1: las 20.000 recepciones compartian una sola marca de reloj. Ahora
+  -- se deriva del lote, que si varia.
+  now() - ((abs(hashtext(lote.lot_code)) % 180) || ' days')::interval
+        - ((abs(hashtext(lote.lot_code)) % 1440) || ' minutes')::interval
 from public.inventory_lots as lote
-cross join generate_series(1, 1) as g
 where lote.id::text like 'f4000000-%'
 on conflict do nothing;
 
@@ -321,9 +331,11 @@ select
   'volumen:' || lote.lot_code || ':' || par.n || ':' || par2.lado,
   'Movimiento del ejercicio de carga',
   lote.received_by,
-  -- Repartidos en el tiempo: sin esto, particionar por rango temporal (B8) no se podría
-  -- ni ensayar, porque todo caería en la misma partición.
-  now() - ((par.n % 180) || ' days')::interval
+  -- Repartidos en el tiempo de verdad: sin esto, particionar por rango temporal (B8) no se
+  -- podría ni ensayar. La marca se deriva del lote Y del par, no solo del par: con 24 pares
+  -- por lote, derivarla solo del par daba 25 valores distintos para 980.000 filas.
+  now() - ((abs(hashtext(lote.lot_code)) + par.n * 7) % 180 || ' days')::interval
+        - ((par.n * 37 + abs(hashtext(lote.lot_code)) % 60) || ' minutes')::interval
 from public.inventory_lots as lote
 cross join generate_series(1, ${paresPorLote}) as par(n)
 cross join generate_series(0, 1) as par2(lado)
@@ -332,6 +344,190 @@ on conflict do nothing;
 
 select 'movimientos' as etapa, count(*)::text as filas from public.stock_movements
 where idempotency_key like 'volumen:%';
+`,
+  },
+  {
+    nombre: "necesidades",
+    titulo: `${ESCALA.necesidades.toLocaleString("es")} casos de necesidad con su articulo`,
+    sql: `
+insert into public.need_cases(id, event_id, category, description, public_location_text, status, priority_score)
+select
+  ('f6000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  '${EVENTO}'::uuid,
+  (array['Alimentos','Agua','Higiene','Salud','Refugio','Logistica'])[1 + (g % 6)],
+  'Caso sintetico del ejercicio de carga numero ' || g,
+  'Zona sintetica ' || (g % 40),
+  (array['reported','in_verification','verified','published'])[1 + (g % 4)]::public.need_status,
+  (g % 100)
+from generate_series(1, ${ESCALA.necesidades}) as g
+on conflict (id) do nothing;
+
+insert into public.need_items(id, need_case_id, category, quantity_required, unit)
+select
+  ('f6100000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  ('f6000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  (array['Alimentos','Agua','Higiene','Salud','Refugio','Logistica'])[1 + (g % 6)],
+  10 + (g % 90),
+  (array['kilogramo','litro','unidad'])[1 + (g % 3)]
+from generate_series(1, ${ESCALA.necesidades}) as g
+on conflict (id) do nothing;
+
+select 'necesidades' as etapa, count(*)::text as filas from public.need_cases where id::text like 'f6000000-%';
+`,
+  },
+  {
+    nombre: "asignaciones",
+    titulo: `${ESCALA.asignaciones.toLocaleString("es")} asignaciones contra solicitudes`,
+    sql: `
+-- Dos restricciones mandan aqui y las dos se respetan: allocations_single_destination exige
+-- exactamente un destino, y allocations_transfer_line obliga a que si se cuelga de un traslado
+-- se nombre tambien su linea. Se usa la necesidad, que es un destino de una sola pieza.
+insert into public.allocations(id, event_id, organization_id, lot_id, need_item_id, quantity, status, idempotency_key, allocated_by)
+select
+  ('f7000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  '${EVENTO}'::uuid,
+  lote.organization_id,
+  lote.id,
+  ('f6100000-0000-0000-0000-' || lpad((1 + (g % ${ESCALA.necesidades}))::text, 12, '0'))::uuid,
+  1 + (g % 20),
+  -- allocations.status es texto libre, no enum: castearlo era inventarse un tipo.
+  (array['reserved','dispatched','delivered'])[1 + (g % 3)],
+  'volumen-asignacion-' || g,
+  lote.received_by
+from generate_series(1, ${ESCALA.asignaciones}) as g
+cross join lateral (
+  select id, organization_id, received_by from public.inventory_lots
+  where id = ('f4000000-0000-0000-0000-' || lpad((1 + (g % ${ESCALA.lotes}))::text, 12, '0'))::uuid
+) as lote
+on conflict (id) do nothing;
+
+select 'asignaciones' as etapa, count(*)::text as filas from public.allocations where id::text like 'f7000000-%';
+`,
+  },
+  {
+    nombre: "despachos",
+    titulo: `${ESCALA.despachos.toLocaleString("es")} despachos con sus lineas`,
+    sql: `
+-- Sin traslado a proposito: estos despachos sirven asignaciones que cuelgan de una necesidad,
+-- no de una solicitud entre bodegas. Ponerles un traslado ademas seria describir un recorrido
+-- que el sistema no produce.
+insert into public.shipments(id, event_id, organization_id, origin_location_id, destination_location_id, public_destination, status, transport_mode, transport_plate, created_by)
+select
+  ('f8000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  '${EVENTO}'::uuid,
+  origen.organization_id,
+  origen.id, destino.id,
+  'Destino sintetico ' || (g % 40),
+  (array['preparing','dispatched','in_transit','arrived','delivered'])[1 + (g % 5)]::public.shipment_status,
+  -- Los valores salen de la restriccion real de cada columna, no de lo que sonaria bien.
+  (array['transportadora','particular','institucional'])[1 + (g % 3)], 'SIN-' || lpad(g::text, 4, '0'),
+  ('f0000000-0000-0000-0000-' || lpad((1 + (g % ${ESCALA.operadores}))::text, 12, '0'))::uuid
+from generate_series(1, ${ESCALA.despachos}) as g
+cross join lateral (
+  select id, organization_id from public.inventory_locations
+  where id::text like 'f1000000-%' order by id offset (g % ${ESCALA.bodegas}) limit 1
+) as origen
+cross join lateral (
+  select id from public.inventory_locations
+  where id::text like 'f1000000-%' order by id offset ((g + 1) % ${ESCALA.bodegas}) limit 1
+) as destino
+on conflict (id) do nothing;
+
+insert into public.shipment_items(id, shipment_id, allocation_id, quantity)
+select
+  ('f9000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  ('f8000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  ('f7000000-0000-0000-0000-' || lpad((1 + (g % ${ESCALA.asignaciones}))::text, 12, '0'))::uuid,
+  1 + (g % 15)
+from generate_series(1, ${ESCALA.despachos}) as g
+on conflict (id) do nothing;
+
+select 'despachos' as etapa, count(*)::text as filas from public.shipments where id::text like 'f8000000-%';
+`,
+  },
+  {
+    nombre: "entregas",
+    titulo: `${ESCALA.entregas.toLocaleString("es")} entregas con sus lineas`,
+    sql: `
+-- Estas SI mueven la cache de saldo por su segunda fuente: delivery_items alimenta delivered y
+-- lost, que es la mitad que el Kardex no refleja contra el lote de origen. Sembrarlas es lo que
+-- hace que esa mitad se ejercite a volumen y no solo en una prueba de una fila.
+insert into public.deliveries(id, shipment_id, status, quantity_delivered, quantity_damaged, quantity_missing, idempotency_key)
+select
+  ('fa000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  ('f8000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  (array['reported','delivered','validated','incident'])[1 + (g % 4)],
+  1 + (g % 10), (g % 3), (g % 2),
+  'volumen-entrega-' || g
+from generate_series(1, ${ESCALA.entregas}) as g
+on conflict (id) do nothing;
+
+insert into public.delivery_items(delivery_id, shipment_item_id, quantity_delivered, quantity_damaged, quantity_missing)
+select
+  ('fa000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  ('f9000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  1 + (g % 10), (g % 3), (g % 2)
+from generate_series(1, ${ESCALA.entregas}) as g
+on conflict do nothing;
+
+select 'entregas' as etapa, count(*)::text as filas from public.deliveries where id::text like 'fa000000-%';
+`,
+  },
+  {
+    nombre: "aportes",
+    titulo: `${ESCALA.aportes.toLocaleString("es")} aportes en cola de verificacion`,
+    sql: `
+insert into public.donation_intakes(
+  id, event_id, organization_id, kind, idempotency_key, donor_name_private,
+  public_attribution_kind, declared_status, submitted_by, request_fingerprint, status, submitted_at
+)
+select
+  ('fb000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  '${EVENTO}'::uuid,
+  bodega.organization_id,
+  (array['in_kind','money'])[1 + (g % 2)]::public.donation_kind,
+  'volumen-aporte-' || g,
+  'Donante sintetico ' || g,
+  'anonymous', 'comprometida',
+  ('f0000000-0000-0000-0000-' || lpad((1 + (g % ${ESCALA.operadores}))::text, 12, '0'))::uuid,
+  encode(extensions.digest('volumen-aporte-' || g, 'sha256'), 'hex'),
+  -- Los valores salen del enum real, no de lo que uno supondria que se llaman.
+  (array['reported','pending_verification','observed','approved'])[1 + (g % 4)]::public.intake_status,
+  now() - ((abs(hashtext('aporte' || g)) % 180) || ' days')::interval
+from generate_series(1, ${ESCALA.aportes}) as g
+cross join lateral (
+  select organization_id from public.inventory_locations
+  where id::text like 'f1000000-%' order by id offset (g % ${ESCALA.bodegas}) limit 1
+) as bodega
+on conflict (id) do nothing;
+
+select 'aportes' as etapa, count(*)::text as filas from public.donation_intakes where id::text like 'fb000000-%';
+`,
+  },
+  {
+    nombre: "financieros",
+    titulo: `${ESCALA.movimientosFinancieros.toLocaleString("es")} movimientos financieros`,
+    sql: `
+insert into public.financial_transactions(
+  id, event_id, organization_id, fund_id, transaction_type, amount, status,
+  provider, provider_reference_private, public_reference, idempotency_key, reconciled_at
+)
+select
+  ('fc000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+  fondo.event_id, fondo.organization_id, fondo.id,
+  'credit'::public.financial_transaction_type,
+  1000 + (g % 90000),
+  (array['reconciled','provider_confirmed','reported'])[1 + (g % 3)],
+  'sandbox',
+  'VOLPRIV-' || lpad(g::text, 10, '0'),
+  'VOL-' || lpad(g::text, 10, '0'),
+  'volumen-financiero-' || g,
+  now() - ((abs(hashtext('fin' || g)) % 180) || ' days')::interval
+from generate_series(1, ${ESCALA.movimientosFinancieros}) as g
+cross join lateral (select id, event_id, organization_id from public.funds limit 1) as fondo
+on conflict (id) do nothing;
+
+select 'financieros' as etapa, count(*)::text as filas from public.financial_transactions where id::text like 'fc000000-%';
 `,
   },
   {
@@ -397,6 +593,12 @@ union all select 'solicitudes logísticas', count(*)::text from public.transfer_
 union all select 'líneas de solicitud', count(*)::text from public.transfer_request_items
 union all select 'operadores con membresía', count(*)::text from public.memberships where active
 union all select 'bodegas', count(*)::text from public.inventory_locations
+union all select 'asignaciones', count(*)::text from public.allocations
+union all select 'despachos', count(*)::text from public.shipments
+union all select 'entregas', count(*)::text from public.deliveries
+union all select 'aportes en cola', count(*)::text from public.donation_intakes
+union all select 'casos de necesidad', count(*)::text from public.need_cases
+union all select 'movimientos financieros', count(*)::text from public.financial_transactions
 union all select 'eventos de auditoría', count(*)::text from public.audit_events;
 
 -- La comprobación que hace honesto al volumen: ninguna posición del Kardex puede quedar
