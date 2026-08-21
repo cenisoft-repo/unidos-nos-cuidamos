@@ -11,7 +11,11 @@ import { StatusPill } from "./status-pill";
 type TrackResult = { code: string; record_type: string; safe_status: string; last_update: string; message: string };
 type JourneyStep = { step: number; stage_key: string; stage_label: string; detail: string; occurred_at: string; related_code: string };
 
-const DEMO_CODE = "NEC-A1B2C3D4E5F60718293A4B5C";
+// G-065: el codigo de ejemplo ya no se incrusta. Estaba fijado al de la semilla local, asi
+// que en produccion el boton cargaba un codigo inexistente y quien lo pulsaba para aprender a
+// usar la pagina se llevaba un «no encontrado»: la ayuda demostrando que la pagina no
+// funciona. Ahora llega desde el servidor, tomado de un aporte publicado de verdad, y si no
+// hay ninguno el boton no existe.
 
 // Qué falta después de cada hito confirmado. Se describe el siguiente control, no una
 // promesa de tiempo: el recorrido depende de decisiones humanas, no de un temporizador.
@@ -36,7 +40,7 @@ const RECORD_LABELS: Record<string, string> = {
   donation: "Donación operacional",
 };
 
-export function TrackingForm({ initialCode = "" }: { initialCode?: string }) {
+export function TrackingForm({ initialCode = "", demoCode }: { initialCode?: string; demoCode?: string | null }) {
   const [code, setCode] = useState(initialCode);
   const [result, setResult] = useState<TrackResult | null>(null);
   const [journey, setJourney] = useState<JourneyStep[]>([]);
@@ -73,12 +77,12 @@ export function TrackingForm({ initialCode = "" }: { initialCode?: string }) {
       <form className="tracking-search" onSubmit={(event) => { event.preventDefault(); void search(); }}>
         <div className="field">
           <label htmlFor="tracking-code">Código de seguimiento</label>
-          <div className="tracking-input-wrap"><MapPinned size={18} aria-hidden="true" /><input id="tracking-code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="NEC-… / APO-… / DON-…" minLength={28} maxLength={28} required /></div>
+          <div className="tracking-input-wrap"><MapPinned size={18} aria-hidden="true" /><input id="tracking-code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="NEC-… / APO-… / DON-…" minLength={28} maxLength={37} required /></div>
           <small>Empieza por NEC, APO o DON y tiene 28 caracteres.</small>
         </div>
         <button className="button button-dark button-block" disabled={pending}><Search size={17} /> {pending ? "Consultando…" : "Ver mi recorrido"}</button>
-        {servesNonProductionData && (
-          <button className="tracking-demo" type="button" onClick={() => { setCode(DEMO_CODE); setError(""); setResult(null); setJourney([]); }}>
+        {servesNonProductionData && demoCode && (
+          <button className="tracking-demo" type="button" onClick={() => { setCode(demoCode); setError(""); setResult(null); setJourney([]); }}>
             Usar un código de práctica <ArrowRight size={14} />
           </button>
         )}

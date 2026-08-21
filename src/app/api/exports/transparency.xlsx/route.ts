@@ -93,7 +93,7 @@ export async function GET(request: Request) {
     { metric: "Necesidades públicas", value: needs.length ? { formula: `COUNTA('Necesidades'!A5:A${needEnd})`, result: needs.length } : 0, unit: "casos", definition: "Proyecciones publicadas y vigentes" },
     { metric: "Cobertura promedio simple", value: needs.length ? { formula: `IFERROR(AVERAGE('Necesidades'!H5:H${needEnd}),0)`, result: averageCoverage } : 0, unit: "%", definition: "Promedio no ponderado del porcentaje de cada necesidad" },
     { metric: "Aportes públicos", value: donations.length ? { formula: `COUNTA('Aportes públicos'!A5:A${donationEnd})`, result: donations.length } : 0, unit: "aportes", definition: "Solo aportes verificados y publicados" },
-    { metric: "Centros proyectados", value: centers.length ? { formula: `COUNTA('Centros'!A5:A${centerEnd})`, result: centers.length } : 0, unit: "centros", definition: "Ubicación aproximada; sin direcciones exactas" },
+    { metric: "Centros proyectados", value: centers.length ? { formula: `COUNTA('Centros'!A5:A${centerEnd})`, result: centers.length } : 0, unit: "centros", definition: "Dirección pública del punto de entrega; sin contacto ni responsable" },
   ];
   addDataSheet(workbook, {
     name: "Resumen",
@@ -149,16 +149,23 @@ export async function GET(request: Request) {
   addDataSheet(workbook, {
     name: "Centros",
     title: "Centros de acopio proyectados",
-    description: "Coordenadas y zonas aproximadas. La exportación excluye direcciones exactas y datos de contacto.",
+    // G-063: la leyenda decía «excluye direcciones exactas» y publicaba direcciones postales
+    // completas. No era una fuga —`202608170002` decidió que la dirección de un acopio es
+    // pública, porque es el lugar donde se entrega— era el rótulo el que mentía, y un rótulo
+    // que contradice una decisión vigente es peor que no ponerlo: enseña a no leerlos.
+    description:
+      "Dirección pública y coordenada real de cada punto de entrega: un acopio existe para que "
+      + "alguien llegue a él. La exportación excluye contacto, responsable, evidencia y todo dato "
+      + "de quien aporta o recibe.",
     columns: [
       { header: "ID público", width: 38, value: (row: CenterRow) => row.id },
       { header: "Centro", width: 28, value: (row) => row.name },
-      { header: "Zona", width: 26, value: (row) => row.location_label },
+      { header: "Dirección pública", width: 40, value: (row) => row.location_label },
       { header: "Acepta", width: 32, value: (row) => row.accepts.join(", ") },
       { header: "Restringe", width: 32, value: (row) => row.restricted_items.join(", ") },
       { header: "Cadena de frío", width: 16, value: (row) => row.cold_chain_capable ? "Sí" : "No" },
-      { header: "Latitud aproximada", width: 20, value: (row) => Number(row.latitude), numFmt: "0.000000" },
-      { header: "Longitud aproximada", width: 20, value: (row) => Number(row.longitude), numFmt: "0.000000" },
+      { header: "Latitud", width: 20, value: (row) => Number(row.latitude), numFmt: "0.000000" },
+      { header: "Longitud", width: 20, value: (row) => Number(row.longitude), numFmt: "0.000000" },
     ],
     rows: centers,
   });

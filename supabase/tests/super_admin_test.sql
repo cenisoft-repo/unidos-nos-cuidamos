@@ -4,7 +4,7 @@
 -- que el alcance global exista, que NO sea un bypass, que nadie pueda escalar su
 -- propio rol y que cada cambio administrativo quede con su antes y su despues.
 begin;
-select plan(65);
+select plan(67);
 
 -- ------------------------------------------------------------- el rol existe --
 select ok(
@@ -431,6 +431,40 @@ select is(
   1,
   'La organizacion suspendida sigue existiendo con su historial'
 );
+
+-- ------------------------------------- G-071 · la marca sola no abre la puerta --
+--
+-- `202608200002` cerro la escritura directa de una membresia SUPER_ADMIN con un disparador que
+-- deja pasar cuando ve la marca de transaccion. Pero el disparador era `security definer`, asi
+-- que `current_user` dentro de el era siempre el dueno y la unica condicion efectiva quedaba
+-- siendo la marca, que `set_config` deja poner a cualquiera. `service_role` tiene ademas INSERT
+-- sobre `memberships` desde el arranque en frio: se concedia autoridad global a quien quisiera,
+-- sin actor en la auditoria. Estuvo desplegado desde el 20 de agosto.
+--
+-- Lo que se fija aqui no es «existe un disparador», que ya se comprobaba, sino que la marca
+-- **por si sola** no basta.
+reset role;
+set local role service_role;
+select set_config('app.super_admin_grant','on', true);
+select throws_ok(
+  $$insert into public.memberships(user_id, organization_id, event_id, role, active)
+    values ('00000000-0000-0000-0000-000000000102','20000000-0000-0000-0000-000000000001',
+            '10000000-0000-0000-0000-000000000001','super_admin', true)$$,
+  '42501',
+  'SUPER_ADMIN solo se concede o revoca con grant_super_admin() / revoke_super_admin()',
+  'Poner la marca a mano desde service_role NO concede SUPER_ADMIN'
+);
+select set_config('app.super_admin_grant','', true);
+
+-- Y la via sancionada sigue abierta: cerrar el atajo no puede cerrar el arranque en frio, que
+-- es como la propia semilla concede la primera autoridad global.
+select lives_ok(
+  $$select public.grant_super_admin(
+      'aliado@rutasolidaria.local','20000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000001','Comprobacion de que la via legitima sigue abierta')$$,
+  'grant_super_admin desde service_role sigue funcionando'
+);
+reset role;
 
 select * from finish();
 rollback;

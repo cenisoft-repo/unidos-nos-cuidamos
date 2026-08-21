@@ -18,6 +18,35 @@ test("salud y cabeceras operativas son verificables", async ({ request }) => {
   expect(portal.headers()["cross-origin-resource-policy"]).toBe("same-origin");
 });
 
+test("una ruta inexistente responde en español y el sitio no se ofrece a los buscadores (G-067)", async ({ page, request }) => {
+  /*
+   * G-067: la 404 era la de Next por omisión —«404: This page could not be found.»— en inglés,
+   * dentro de un sitio que se declara `lang="es"`. Y no había `robots.txt`, así que la
+   * instancia quedaba abierta a indexación: una plataforma humanitaria **de práctica** en los
+   * resultados de quien busca ayuda de verdad.
+   */
+  const respuesta = await request.get("/ruta-que-no-existe-jamas", { maxRedirects: 0 });
+  expect(respuesta.status()).toBe(404);
+  const html = await respuesta.text();
+  expect(html).not.toContain("This page could not be found");
+  expect(html).toContain("Esta página no existe");
+
+  await page.goto("/ruta-que-no-existe-jamas");
+  await expect(page.getByRole("heading", { name: "Esta página no existe." })).toBeVisible();
+  // Una 404 en una plataforma de ayuda tiene que ofrecer salida: quien llega buscaba algo.
+  await expect(page.getByRole("link", { name: "Consúltalo con tu código" })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
+
+  const robots = await request.get("/robots.txt");
+  expect(robots.status()).toBe(200);
+  const reglas = await robots.text();
+  expect(reglas).toContain("User-Agent: *");
+  // Mientras la instancia sirva datos sintéticos, no se ofrece nada. Si algún día declara
+  // `production`, esta comprobación hay que cambiarla a mano, que es justo lo que se quiere:
+  // abrir un sitio a los buscadores debe ser una decisión, no un descuido.
+  expect(reglas).toContain("Disallow: /");
+});
+
 test("portal público muestra solo proyecciones verificadas", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Ayudar debe sentirse/ })).toBeVisible();
@@ -43,17 +72,55 @@ test("mapa filtra necesidades y seguimiento explica el recorrido", async ({ page
   await expect(page.getByText("Kits de higiene familiar").first()).toBeVisible();
 
   await page.goto("/seguimiento");
-  // El atajo al código de ejemplo solo existe mientras la instancia declare datos de
-  // práctica. La prueba escribe el código para funcionar también en modo producción.
+  /*
+   * G-065: el atajo solo existe mientras la instancia declare datos de práctica, y ahora
+   * carga un código tomado de un aporte realmente publicado. Antes era una constante fijada a
+   * la semilla local: en producción el botón llevaba siempre a «no encontrado», es decir, la
+   * ayuda que la página ofrece para aprender a usarla era justo lo que demostraba que no
+   * funcionaba. Lo que se comprueba aquí es que el ejemplo ofrecido RESUELVE.
+   */
   const demoShortcut = page.getByRole("button", { name: "Usar un código de práctica" });
   if (await demoShortcut.count()) {
-    await demoShortcut.click();
+    /*
+     * La comprobación cruza dos superficies a propósito, y hubo que llegar a esto porque la
+     * primera versión no servía: comprobar que el código cargado «resuelve» pasaba también
+     * con la constante muerta, porque en local ese código sembrado SÍ existe. El defecto solo
+     * se veía donde no estuviera sembrado, o sea en producción, que es justo donde no se
+     * prueba.
+     *
+     * Lo que de verdad hay que fijar es la relación: **el ejemplo que la plataforma ofrece
+     * tiene que ser algo que la plataforma publica**. Un código que no aparece en
+     * `/transparencia` no es un ejemplo, es una constante con suerte.
+     */
+    await page.goto("/transparencia");
+    // La tabla se localiza por su encabezado, no por posición: `/transparencia` tiene varias
+    // `.analytics-table` y la primera es la de cobertura. Tomar «la primera» daba
+    // ["Agua", "45 %", …] y convertía la comprobación en un acierto por casualidad.
+    const tablaCodigos = page.locator("table.analytics-table").filter({
+      has: page.getByRole("columnheader", { name: /Código/ }),
+    });
+    await expect(tablaCodigos).toBeVisible();
+    const publicados = (await tablaCodigos.locator("tbody tr td strong").allInnerTexts())
+      .map((texto) => texto.trim())
+      .filter((texto) => /^(NEC|APO|DON)-/.test(texto));
+    expect(publicados.length).toBeGreaterThan(0);
+
+    await page.goto("/seguimiento");
+    await page.getByRole("button", { name: "Usar un código de práctica" }).click();
+    const cargado = await page.getByLabel("Código de seguimiento").inputValue();
+    expect(cargado).toMatch(/^(NEC|APO|DON)-[A-F0-9]{24}(-[A-F0-9]{8})?$/);
+    expect(publicados).toContain(cargado);
+
+    await page.getByRole("button", { name: "Ver mi recorrido" }).click();
+    await expect(page.locator(".tracking-result")).toBeVisible();
+    await expect(page.locator(".tracking-journey li")).not.toHaveCount(0);
+    await expect(page.locator(".form-error")).toHaveCount(0);
   } else {
     await page.getByLabel("Código de seguimiento").fill("NEC-A1B2C3D4E5F60718293A4B5C");
+    await page.getByRole("button", { name: "Ver mi recorrido" }).click();
+    await expect(page.getByRole("heading", { name: "Publicado" })).toBeVisible();
+    await expect(page.getByText("Necesidad verificada", { exact: true })).toBeVisible();
   }
-  await page.getByRole("button", { name: "Ver mi recorrido" }).click();
-  await expect(page.getByRole("heading", { name: "Publicado" })).toBeVisible();
-  await expect(page.getByText("Necesidad verificada", { exact: true })).toBeVisible();
 });
 
 test("reporte ciudadano bloquea teléfono en campo público", async ({ page }) => {
@@ -89,6 +156,29 @@ test("ingreso no publica cuentas ni credenciales de práctica", async ({ page })
   await expect(page.getByLabel("Correo")).toBeVisible();
   await expect(page.getByLabel("Contraseña")).toBeVisible();
   await expect(page.getByRole("link", { name: "Crea tu cuenta de aliado" })).toBeVisible();
+});
+
+test("el ingreso no puede llevar a otro dominio por mucho que lo pida el enlace (G-062)", async ({ page }) => {
+  /*
+   * G-062: `next` lo pone quien construye el enlace. La comprobacion anterior era
+   * `startsWith("/") && !startsWith("//")`, y dejaba pasar `/\evil.example`, que el
+   * navegador resuelve a https://evil.example/. Con la contrasena ya escrita, eso es un robo
+   * de credenciales con la apariencia de la plataforma hasta el ultimo instante.
+   *
+   * Se prueba con una sesion real, no con la unitaria: lo que importa es donde acaba el
+   * navegador despues de autenticar, no lo que devuelve una funcion.
+   */
+  const destinoHostil = `/${String.fromCharCode(92)}ejemplo-hostil.invalid`;
+  await page.goto(`/ingresar?next=${encodeURIComponent(destinoHostil)}`);
+  await page.getByLabel("Correo").fill("admin@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+
+  // Acaba dentro del sitio, en el destino por omision, y nunca en el dominio ajeno.
+  await expect(page).toHaveURL(/\/operaciones$/, { timeout: 30000 });
+  expect(page.url()).not.toContain("ejemplo-hostil.invalid");
+  // Y la consola operativa cargo de verdad: si se hubiera ido fuera, esto no estaria.
+  await expect(page.getByRole("heading", { name: /Buenos días, Ana/ })).toBeVisible();
 });
 
 test("Supabase Auth abre el centro operativo con rol y sin PII pública", async ({ page }) => {
@@ -542,6 +632,31 @@ test("dashboard público ofrece filtros, tabla accesible y Excel seguro", async 
   await workbook.xlsx.load(arrayBuffer);
   expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Resumen", "Necesidades", "Aportes públicos", "Centros", "Metodología"]);
   expect(workbook.getWorksheet("Necesidades")?.getCell("H5").value).toMatchObject({ formula: expect.stringContaining("IFERROR") });
+
+  /*
+   * G-063: la hoja «Centros» declaraba «La exportación excluye direcciones exactas» y a la vez
+   * publicaba direcciones postales completas. No era una fuga —`202608170002` decidió que la
+   * dirección de un acopio es pública, porque es el lugar donde se entrega— era el rótulo el
+   * que mentía. Y un rótulo que contradice la decisión vigente enseña a no leer los rótulos,
+   * que es justo lo contrario de lo que una exportación de transparencia existe para hacer.
+   *
+   * Esta comprobación ata la leyenda a lo que la hoja publica de verdad: si alguien vuelve a
+   * prometer que se excluye algo que sí sale, falla.
+   */
+  const centros = workbook.getWorksheet("Centros");
+  // Fila 1 titulo, fila 2 leyenda, fila 4 encabezados: la disposicion la fija addDataSheet.
+  const leyendaCentros = String(centros?.getCell("A2").value ?? "");
+  expect(leyendaCentros).not.toContain("excluye direcciones exactas");
+  expect(leyendaCentros).toContain("Dirección pública");
+  // Lo que sí promete excluir tiene que seguir sin aparecer en ninguna columna.
+  const encabezados = (centros?.getRow(4).values as unknown[]).map((valor) => String(valor ?? ""));
+  expect(encabezados).toContain("Dirección pública");
+  for (const prohibido of ["Contacto", "Teléfono", "Correo", "Responsable", "Evidencia", "Donante"]) {
+    expect(encabezados.some((cabecera) => cabecera.includes(prohibido))).toBe(false);
+  }
+  // Y las coordenadas ya no se anuncian como aproximadas, porque para un acopio son las reales.
+  expect(encabezados).toContain("Latitud");
+  expect(encabezados.some((cabecera) => cabecera.includes("aproximada"))).toBe(false);
 });
 
 test("Excel operativo bloquea visitantes sin sesión", async ({ request }) => {
