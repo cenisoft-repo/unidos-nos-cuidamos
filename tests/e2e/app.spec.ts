@@ -117,6 +117,39 @@ test("Supabase Auth abre el centro operativo con rol y sin PII pública", async 
   await expect(page.getByText("admin@rutasolidaria.local")).toHaveCount(1);
 });
 
+test("la consola pregunta qué necesitas hacer y responde con las tres acciones del recorrido", async ({ page }) => {
+  await page.goto("/ingresar?next=/operaciones");
+  await page.getByLabel("Correo").fill("bodega@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await expect(page).toHaveURL(/\/operaciones$/);
+
+  await expect(page.getByRole("heading", { name: "¿Qué necesitas hacer?" })).toBeVisible();
+  const acciones = page.getByRole("group", { name: "Acciones principales de la operación" });
+  await expect(acciones.getByRole("link")).toHaveCount(3);
+  await expect(acciones.getByText("Necesito mercancía.")).toBeVisible();
+  await expect(acciones.getByText("Está llegando mercancía.")).toBeVisible();
+  await expect(acciones.getByText("Tengo mercancía que debe salir.")).toBeVisible();
+  // Cada acción abre la etapa que le corresponde, no un menú del que hay que deducirla.
+  await expect(acciones.getByRole("link", { name: /Solicitar/ })).toHaveAttribute("href", "/operaciones/bodega#traslados");
+  await expect(acciones.getByRole("link", { name: /Recibir/ })).toHaveAttribute("href", "/operaciones/bodega#recepciones");
+  await expect(acciones.getByRole("link", { name: /Despachar/ })).toHaveAttribute("href", "/operaciones/bodega#despachos");
+  // Las cifras no son decorativas: cada acción declara cuánto espera de verdad.
+  await expect(acciones.getByText(/aporte\(s\) y .*carga\(s\) por recibir/)).toBeVisible();
+});
+
+test("el aliado no ve las acciones de bodega en la consola", async ({ page }) => {
+  await page.goto("/ingresar?next=/operaciones");
+  await page.getByLabel("Correo").fill("aliado@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await expect(page).toHaveURL(/\/operaciones$/);
+
+  await expect(page.getByRole("heading", { name: "¿Qué necesitas hacer?" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Acciones principales de la operación" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Bodega y logística" })).toHaveCount(0);
+});
+
 test("administración parametriza un punto de entrega sin exponer la dirección", async ({ page }) => {
   await page.goto("/ingresar?next=/operaciones/centros");
   await page.getByLabel("Correo").fill("admin@rutasolidaria.local");
@@ -169,12 +202,12 @@ test("bodega guía recepción, compatibilidad y evidencia bloqueada", async ({ p
 
   await expect(page.getByRole("navigation", { name: "Etapas de bodega y logística" })).toBeVisible();
   await expect(page.getByRole("link", { name: /01 Recibir/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /03 Trasladar/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /03 Solicitar/ })).toBeVisible();
   await page.getByLabel("Buscar aporte, categoría o artículo").fill("Agua");
   await expect(page.getByRole("heading", { name: /Recepciones pendientes/ })).toBeVisible();
   // La posición se lee del Kardex, no del saldo con el que nació el lote.
   await expect(page.getByText(/físico, disponible y reservado salen del Kardex/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Traslados entre bodegas/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Solicitar producto/ })).toBeVisible();
   await expect(page.getByText("Sin escritura directa de stock", { exact: true })).toBeVisible();
   await expect(page.getByText(/todas salen de movimientos registrados en el Kardex/)).toBeVisible();
 });
@@ -212,9 +245,10 @@ test("el registro de aliado llega hasta la cuenta activa sin correo de confirmac
    * «revisa tu correo» y esperaba un mensaje que nunca iba a llegar.
    */
   const sufijo = Date.now().toString(36);
+  const razonSocial = `Aliado de prueba ${sufijo}`;
   await page.goto("/registro");
   await page.getByLabel("¿Quién aporta?").selectOption("empresa");
-  await page.getByLabel("Nombre o razón social").fill(`Aliado de prueba ${sufijo}`);
+  await page.getByLabel("Nombre o razón social").fill(razonSocial);
   await page.getByLabel("Identificación o NIT").fill(`NIT-${sufijo}`);
   await page.getByLabel("Teléfono de contacto").fill("6041234567");
   await page.getByLabel("Responsable").fill("Responsable de prueba");
@@ -228,9 +262,30 @@ test("el registro de aliado llega hasta la cuenta activa sin correo de confirmac
   await expect(page).toHaveURL(/\/registro\/confirmado$/, { timeout: 30000 });
   await expect(page.getByRole("heading", { name: /Cuenta ALIADO activa/ })).toBeVisible({ timeout: 30000 });
 
-  // Y la cuenta ya opera: el formulario de aporte reconoce su organización.
+  /*
+   * G-055: hasta aquí la prueba afirmaba «y la cuenta ya opera», que era el defecto escrito
+   * como expectativa. El autorregistro se concedía `organizations.verified` y con eso la
+   * organización quedaba habilitada ante los donantes sin que nadie la revisara. Lo que se
+   * comprueba ahora es lo contrario, en las tres superficies donde se notaba.
+   */
+
+  // 1) La pantalla de activación no promete el permiso que la organización no tiene.
+  await expect(page.getByText(/el equipo de verificación tiene que habilitarla/)).toBeVisible();
+
+  // 2) El aporte no se abre: /donar explica el paso que falta en vez de ofrecer el formulario.
   await page.goto("/donar");
-  await expect(page.getByText("Paso 1 de 4")).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole("heading", { name: /Tu organización está en revisión/ })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Paso 1 de 4")).toHaveCount(0);
+  // Esta superficie solo existe para un aliado recién registrado, así que ni `audit:visual`
+  // ni `audit:a11y` la alcanzan: sus recorridos entran con las cuentas sembradas. La medida
+  // se queda aquí, que es donde sí se puede llegar a ella.
+  const anchos = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }));
+  expect(anchos.document).toBeLessThanOrEqual(anchos.viewport);
+
+  // 3) Y el portal público no manda a nadie a entregar allí. Es la mitad del defecto que no
+  //    pasaba por `verified`: `public_collection_centers` no consultaba la organización.
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: `Acopio ${razonSocial}` })).toHaveCount(0);
 });
 
 test("reportes operativos derivan del Kardex y exigen rol", async ({ page }) => {
@@ -388,6 +443,71 @@ test("aporte económico pasa de declaración privada a conciliación pública", 
   await page.goto("/transparencia");
   await expect(page.getByRole("heading", { name: "Dashboard de aportes verificados" })).toBeVisible();
   await expect(page.getByText(operationalCode!, { exact: true })).toBeVisible();
+});
+
+test("un aporte económico se cobra por la pasarela y no es saldo hasta que tesorería lo concilia", async ({ page }) => {
+  await page.goto("/ingresar?next=/donar");
+  await page.getByLabel("Correo").fill("aliado@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+
+  await page.getByRole("button", { name: "Aporte económico" }).click();
+  await page.getByLabel("Monto declarado (COP)").fill("180000");
+  await page.getByLabel("Situación actual del aporte").selectOption("comprometida");
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.getByLabel("Nombre del donante (empresa o persona)").fill("Empresa pagadora sintética E2E");
+  await page.getByLabel("Correo de coordinación").fill("pasarela-e2e@example.local");
+  await page.getByLabel("¿Cómo quieres aparecer públicamente?").selectOption("organization");
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Confirmar aporte" }).click();
+
+  const intakeCode = await page.locator(".ticket-code strong").textContent();
+  expect(intakeCode).toMatch(/APO-[A-F0-9]{24}/);
+
+  // El comprobante ofrece el cobro, y dice con todas las letras dónde se escriben los
+  // datos de pago: en el proveedor, nunca aquí.
+  await expect(page.getByText(/La plataforma no recibe ni guarda datos de tarjeta/)).toBeVisible();
+  await page.getByRole("button", { name: /Pasarela de práctica/ }).click();
+  await expect(page).toHaveURL(/\/pagos\/practica\/PAG-/);
+  const paymentReference = page.url().match(/PAG-[A-F0-9]{24}/)?.[0];
+  expect(paymentReference).toMatch(/PAG-[A-F0-9]{24}/);
+  await expect(page.getByText(/Aquí no se cobra dinero/)).toBeVisible();
+  await page.getByRole("button", { name: "Simular pago aprobado" }).click();
+  await expect(page.getByText(/El proveedor confirmó el cobro/)).toBeVisible();
+  await expect(page.getByText(/tesorería tiene que conciliarlo contra el extracto/)).toBeVisible();
+
+  // Tesorería lo ve, pero todavía no hay nada que conciliar: verificación no ha aprobado.
+  await page.goto("/operaciones");
+  await page.getByRole("button", { name: "Cerrar sesión" }).click();
+  await page.goto("/ingresar?next=/operaciones/tesoreria");
+  await page.getByLabel("Correo").fill("aprueba@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  const cobro = page.locator(".ops-row").filter({ hasText: paymentReference! });
+  await expect(cobro).toBeVisible();
+  await expect(cobro.getByText(/Verificación todavía no aprobó el aporte/)).toBeVisible();
+
+  // Verificación aprueba.
+  await page.goto("/operaciones");
+  await page.getByRole("button", { name: "Cerrar sesión" }).click();
+  await page.goto("/ingresar?next=/operaciones");
+  await page.getByLabel("Correo").fill("admin@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  await page.locator(".ops-row").filter({ hasText: intakeCode! }).getByRole("button", { name: "Aprobar" }).click();
+
+  // Y solo entonces el cobro entra al libro.
+  await page.goto("/operaciones");
+  await page.getByRole("button", { name: "Cerrar sesión" }).click();
+  await page.goto("/ingresar?next=/operaciones/tesoreria");
+  await page.getByLabel("Correo").fill("aprueba@rutasolidaria.local");
+  await page.getByLabel("Contraseña").fill("RutaSolidaria2026!");
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click();
+  const cobroListo = page.locator(".ops-row").filter({ hasText: paymentReference! });
+  await cobroListo.getByLabel("Referencia del extracto").fill(`EXTRACTO-${paymentReference}`);
+  await cobroListo.getByRole("button", { name: "Conciliar cobro" }).click();
+  await expect(page.getByText(/Cobro conciliado contra el extracto. Ahora sí es saldo/)).toBeVisible();
 });
 
 test("portada no desborda en móvil", async ({ page }) => {

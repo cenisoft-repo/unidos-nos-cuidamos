@@ -367,11 +367,19 @@ async function main() {
     evidence.artifacts.shipmentCode = shipment.shipment_code;
 
     const deliveryKey = `${runId}-delivery`;
+    // La recepción se declara producto a producto; este despacho lleva una sola línea.
+    const shipmentLines = success(
+      "líneas del despacho",
+      await warehouse.from("shipment_items").select("id,quantity").eq("shipment_id", shipmentId),
+    );
     const deliveryPayload = {
       p_shipment_id: shipmentId,
-      p_quantity_delivered: 10,
-      p_quantity_damaged: 0,
-      p_quantity_missing: 0,
+      p_lines: shipmentLines.map((line) => ({
+        shipment_item_id: line.id,
+        delivered: Number(line.quantity),
+        damaged: 0,
+        missing: 0,
+      })),
       p_idempotency_key: deliveryKey,
     };
     const deliveryId = success("registro de entrega", await warehouse.rpc("register_delivery", deliveryPayload));

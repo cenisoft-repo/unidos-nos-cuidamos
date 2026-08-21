@@ -25,6 +25,10 @@ export default function AllyRegistrationPage() {
             <li><MailCheck size={18} /><span>Creas tu cuenta con el correo y la contraseña que elijas.</span></li>
             <li><BadgeCheck size={18} /><span>Al activarla se crea tu organización con el rol ALIADO.</span></li>
             <li><ShieldCheck size={18} /><span>Hasta activarla, la cuenta no puede registrar aportes.</span></li>
+            {/* G-055: activar no es habilitar. Antes el recorrido terminaba aquí y la
+                organización nacía verificada ante los donantes; ahora falta un paso y la
+                lista lo dice, porque un paso que existe y no se anuncia se lee como un fallo. */}
+            <li><ShieldCheck size={18} /><span>Registrar aportes espera además a que verificación habilite la organización.</span></li>
           </ul>
         </aside>
       </div></section>

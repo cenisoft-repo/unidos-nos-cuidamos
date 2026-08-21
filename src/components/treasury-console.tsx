@@ -14,12 +14,25 @@ type Expense = { id: string; amount: number; purpose: string; status: string; re
 type PendingMoney = { donation_id: string; tracking_code: string; intake_tracking_code: string; declared_amount: number; currency: string; attribution: string; submitted_at: string };
 type Ledger = { balance: number; reconciled_credits: number; reconciled_debits: number; movement_count: number };
 type Decision = { expense_request_id: string; decision: string; note: string; decided_at: string };
+/** Cobro que el proveedor ya confirmó y que todavía no es saldo. */
+type ProviderPayment = {
+  payment_reference: string;
+  provider_key: string;
+  sandbox: boolean;
+  amount: number;
+  currency: string;
+  confirmed_at: string;
+  intake_tracking_code: string;
+  declared_amount: number;
+  donation_ready: boolean;
+};
 
 type TreasuryConsoleProps = {
   funds: Fund[];
   transactions: Tx[];
   expenses: Expense[];
   pendingMoney: PendingMoney[];
+  providerPayments: ProviderPayment[];
   ledger: Ledger;
   decisions: Decision[];
   userId: string;
@@ -32,6 +45,7 @@ export function TreasuryConsole({
   transactions,
   expenses,
   pendingMoney,
+  providerPayments,
   ledger,
   decisions,
   userId,
@@ -74,6 +88,22 @@ export function TreasuryConsole({
       p_idempotency_key: crypto.randomUUID(),
     });
     finish(actionError, "Aporte conciliado. El monto ya es público; la referencia del soporte no.");
+  }
+
+  /*
+   * Cobrar y conciliar son dos hechos distintos. El proveedor ya dijo que el dinero entró;
+   * el asiento del libro lo escribe aquí una persona al casarlo con el extracto, y nace
+   * conciliado porque el libro no admite estados intermedios.
+   */
+  async function reconcilePayment(payment: ProviderPayment, form: HTMLFormElement) {
+    const data = new FormData(form);
+    start(`pago-${payment.payment_reference}`);
+    const { error: actionError } = await supabase.rpc("reconcile_provider_payment", {
+      p_payment_reference: payment.payment_reference,
+      p_statement_reference: String(data.get("statement_reference")).trim(),
+      p_idempotency_key: crypto.randomUUID(),
+    });
+    finish(actionError, "Cobro conciliado contra el extracto. Ahora sí es saldo.");
   }
 
   async function reconcileOtherIncome(form: HTMLFormElement) {
@@ -166,6 +196,32 @@ export function TreasuryConsole({
             </article>
           ))}
           {!pendingMoney.length && <p className="ops-empty">No hay aportes económicos aprobados esperando conciliación.</p>}
+        </div>
+      </section>
+
+      <section className="ops-panel" id="cobros" style={{ marginBottom: 24 }}>
+        <header className="ops-panel-header"><div><h2><HandCoins size={18} /> Cobros confirmados por la pasarela</h2><p>El proveedor confirmó el pago; todavía no es saldo. Entra al libro cuando tesorería lo casa con el extracto.</p></div><span>{providerPayments.length}</span></header>
+        <div className="ops-list">
+          {providerPayments.map((payment) => (
+            <article className="ops-row" key={payment.payment_reference}>
+              <div>
+                <h3>{payment.intake_tracking_code} · {currencyFormat.format(Number(payment.amount))} {payment.currency}</h3>
+                <p>Cobro {payment.payment_reference} por {payment.provider_key}{payment.sandbox ? " (práctica)" : ""} · confirmado {formatDate(payment.confirmed_at)}</p>
+                {!payment.donation_ready ? (
+                  <p className="ops-inline-note">Verificación todavía no aprobó el aporte: no hay nada que conciliar aún.</p>
+                ) : canApprove ? (
+                  <form className="treasury-inline-form" onSubmit={(event) => { event.preventDefault(); void reconcilePayment(payment, event.currentTarget); }}>
+                    <label>Referencia del extracto<input name="statement_reference" minLength={4} maxLength={160} placeholder="Línea del extracto bancario" required /></label>
+                    <button className="action-button approve" disabled={pending === `pago-${payment.payment_reference}`}>Conciliar cobro</button>
+                  </form>
+                ) : (
+                  <p className="ops-inline-note">Solo tesorería con rol de aprobación puede conciliar. Esta vista es de consulta.</p>
+                )}
+              </div>
+              <StatusPill status="promised">Confirmado, sin conciliar</StatusPill>
+            </article>
+          ))}
+          {!providerPayments.length && <p className="ops-empty">No hay cobros de pasarela esperando conciliación.</p>}
         </div>
       </section>
 

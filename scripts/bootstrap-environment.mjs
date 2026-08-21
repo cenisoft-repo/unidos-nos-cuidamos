@@ -155,6 +155,10 @@ console.log(`[1/6] Esquema verificado · ${catalogs.length} catálogos vigentes`
 
 // ---------------------------------------------------------------- 2. evento y organizaciones
 
+// G-055: la organización ya no nace habilitada por escritura directa. `verified` sólo sube
+// por `decide_organization_verification` —decisión humana con sustento— o por la vía de
+// arranque en frío, que exige motivo y deja auditoría. Un disparador rechaza el resto, así
+// que escribir `verified: true` aquí fallaría, y debe fallar: era la vía silenciosa.
 assertSuccess(
   "organizaciones",
   await admin.from("organizations").upsert(
@@ -162,12 +166,20 @@ assertSuccess(
       id: organization.id,
       name: organization.name,
       slug: organization.slug,
-      verified: true,
       status: "active",
     })),
     { onConflict: "id" },
   ),
 );
+for (const organization of config.organizations) {
+  assertSuccess(
+    `habilitación de ${organization.slug}`,
+    await admin.rpc("bootstrap_organization_habilitation", {
+      p_organization_id: organization.id,
+      p_reason: `Provisión del entorno declarado en la configuración de arranque (${organization.slug})`,
+    }),
+  );
+}
 assertSuccess(
   "evento",
   await admin.from("emergency_events").upsert({

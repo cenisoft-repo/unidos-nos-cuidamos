@@ -1,16 +1,231 @@
 # Estado actual
 
 - Puerta/hito: G1 publicada como sandbox sintético interno; G2/G3 bloqueadas y no deben incorporarse operadores/PII antes de verificar en remoto el cierre local de `G-022`.
-- Último resultado comprobado: **`npm run verify` verde de extremo a extremo** sobre `integration/superadmin-consolidacion` con **38 migraciones** — preflight, lint, typecheck, 47/47 unitarias, 372/372 pgTAP en cinco archivos, RLS (anonimato, tenant, escalamiento y alcance global), dos pruebas de concurrencia (aporte y reserva), build y 44/44 Playwright web/móvil. Además `audit:a11y` sin problemas en 14 superficies y `audit:visual` con 70 mediciones y cero desbordes.
-- **Remoto al día: 38 migraciones, desplegadas el 2026-08-19 desde `main` en `e572801`.** Se aplicaron por el pooler de transacción (6543) con `--db-url`, porque el de sesión (5432) no es alcanzable desde el equipo de trabajo; el front se desplegó fusionando a `main` y dejando construir a la integración de Git, porque `vercel --prod` local falla con `fetch failed`. Comprobar siempre contra `supabase migration list`, no contra esta memoria.
+- Último resultado comprobado (2026-08-21): **`npm run verify` verde de extremo a extremo** sobre `main` con **43 migraciones locales** — preflight, lint, typecheck, 63/63 unitarias, **532/532 pgTAP en nueve archivos**, RLS, dos pruebas de concurrencia, build y 54/54 Playwright web/móvil. Además `audit:a11y` en 0 sobre 14 superficies —3 indeterminados medidos a mano, 0 rutas con movimiento pese a la preferencia reducida— y `audit:visual` con 70 mediciones y cero desbordes. Servidor de producción reiniciado sobre el build nuevo antes de auditar: auditar contra `npm run dev` no sirve, devuelve 403 en algunos chunks de cliente.
+- **Las migraciones `202608210001`, `202608210002` y `202608220001` NO están desplegadas, y nada de esta sesión está comiteado.** El remoto quedó al día el 2026-08-19 desde `main` en `e572801`. Se aplicaron por el pooler de transacción (6543) con `--db-url`, porque el de sesión (5432) no es alcanzable desde el equipo de trabajo; el front se desplegó fusionando a `main` y dejando construir a la integración de Git, porque `vercel --prod` local falla con `fetch failed`. Comprobar siempre contra `supabase migration list`, no contra esta memoria.
 - Recorrido activo local/remoto: portal, reportes, aportes en especie/dinero con catálogos versionados y centro compatible, QR de seguimiento, operación, tesorería, mapas, dashboards y exportaciones con datos sintéticos. El registro de aporte usa un recorrido adaptativo de cuatro pasos en especie y tres en dinero.
-- Hallazgos: A15-001 a A15-008 cerrados para G1. Cerradas `G-021`, `G-023`, `G-024`, `G-025`, `G-028`, `G-029`, `G-030` (globalmente, verificada en producción), `G-032`, `G-033`, y en esta sesión `G-034` a `G-038` (las de la consolidación, ya ejecutadas), `G-040` (concurrencia de reserva), `G-041` (recepción con faltante) y `G-042` (SUPER_ADMIN y parametrización). `G-039` queda **cerrada solo en el modelo**: el autorregistro ya no escribe `verified`, pero la verificación documental depende de `G-003`. `G-022` tiene su migración aplicada en remoto; falta repetir allí el arnés. En la pista visual: `DQ-01`, `DQ-04` y `DQ-05` cerradas; `DQ-06` mitigada. **Abiertas:** `G-031` P2 (tensión de tenant), `G-026/G-027` P2, `G-043` P2 (antes/después solo en las tablas del parametrizador), `G-015` P2, `G-017` P2 y `G-001` a `G-008` P2 (decisiones humanas). `docs/GAP_LEDGER.md` y `docs/ai/DESIGN_QUALITY.md` son la fuente.
-- Próxima acción exacta: habilitar el registro y la confirmación de correo en Auth desde el panel —sin eso `/registro` acepta el formulario y la activación nunca llega— y rotar la contraseña de la base, que quedó expuesta durante el despliegue. La autoridad global ya está concedida a `gestorti2@cenisoft.org` (2026-08-19), sobre una cuenta creada para ello y no sobre las sintéticas, cuya contraseña vive en el seed. Después, repetir el arnés de simulación remota para cerrar `G-022` globalmente.
+- Hallazgos: A15-001 a A15-008 cerrados para G1. Cerradas `G-021`, `G-023`, `G-024`, `G-025`, `G-028`, `G-029`, `G-030` (globalmente, verificada en producción), `G-032`, `G-033`, y en esta sesión `G-034` a `G-038` (las de la consolidación, ya ejecutadas), `G-040` (concurrencia de reserva), `G-041` (recepción con faltante), `G-042` (SUPER_ADMIN y parametrización) y, el 2026-08-20, `G-050` (solicitud logística generalizada: multiproducto, entre organizaciones y con los tres modos). El 2026-08-21 se cerró `G-055` (P0): la habilitación operativa de una organización pasa a tener una sola puerta auditada, y su punto de acopio deja de publicarse —lista **y mapa**— hasta que alguien la habilite (ADR-022). `G-039` sigue **cerrada solo en el modelo**: el nivel de comprobación distingue buzón de documentos, pero la verificación documental en sí depende de `G-003`. Abiertas por el cierre de `G-055`: `G-059` (la regla de publicación existe dos veces) y `G-060` (la vía de arranque en frío es poder de una clave, no de una persona). `G-022` tiene su migración aplicada en remoto; falta repetir allí el arnés. En la pista visual: `DQ-01`, `DQ-04` y `DQ-05` cerradas; `DQ-06` mitigada. **Abiertas:** `G-031` P2 (tensión de tenant), `G-051` P2 (pedir un lote concreto a otra organización, límite deliberado de privacidad), `G-026/G-027` P2, `G-043` P2 (antes/después solo en las tablas del parametrizador), `G-015` P2, `G-017` P2 y `G-001` a `G-008` P2 (decisiones humanas). `docs/GAP_LEDGER.md` y `docs/ai/DESIGN_QUALITY.md` son la fuente.
+- Próxima acción exacta: **F0 del loop de escala** (`docs/LOOP_MAESTRO_ESCALA.md` §14): escribir `scripts/seed-volumen.mjs` —10⁶ movimientos, 10⁴ solicitudes, 10³ operadores, por las RPC reales— y `scripts/verify-carga.mjs`, que cronometra las 15 consultas del camino caliente y falla si alguna supera su línea base. Sin esa línea base ninguna optimización posterior se puede defender. **En paralelo, y es barato:** los cuatro índices de idempotencia de B5 (`stock_movements`, `reserve_lot_quantity`, `allocate_stock`, `create_shipment`, `reconcile_sandbox_payment` buscan `idempotency_key` sin aportar `organization_id`, y el único índice es `unique (organization_id, idempotency_key)`, sin prefijo aprovechable). Sigue pendiente de administración, no de código: SMTP propio y confirmación de correo en Auth (`G-044`, `G-045`), y rotar la contraseña de la base expuesta durante el despliegue. La autoridad global ya está concedida a `gestorti2@cenisoft.org` (2026-08-19), sobre una cuenta creada para ello y no sobre las sintéticas. Después, repetir el arnés de simulación remota para cerrar `G-022` globalmente.
 - Bloqueos reales: operador, autoridad, DPIA, política de aceptación, proveedor real, WAF/monitoreo externo, backups remotos/PITR, HIBP, marcas y aprobación de piloto. El despliegue actual no autoriza datos reales, recaudo ni comunicación institucional.
-- Entorno local: `preflight:local` pasa. Los enlaces remotos se regeneraron para el despliegue del 2026-08-17 y **se retiraron al terminar** —mientras están puestos, `preflight:local` falla y bloquea `npm run verify`, que es su propósito—; respaldados en `.local-backups/enlaces-remotos/`, se regeneran con `vercel link` y `supabase link`. El `.env.local` sigue apuntando al entorno de **entrega**; para correr la suite hay que conmutar a suite según `docs/REMOTE_SETUP_RUNBOOK.md`.
+- Entorno local: `preflight:local` pasa. Los enlaces remotos se regeneraron para el despliegue del 2026-08-17 y **se retiraron al terminar** —mientras están puestos, `preflight:local` falla y bloquea `npm run verify`, que es su propósito—; respaldados en `.local-backups/enlaces-remotos/`, se regeneran con `vercel link` y `supabase link`. El entorno local quedó en **suite** tras el último `db:reset`, que es lo que exige `npm run verify`; para la aceptación del producto entregado hay que volver a `npm run env:entrega` según `docs/REMOTE_SETUP_RUNBOOK.md`.
 - Deuda documental conocida: `202608170007` lleva en su encabezado la frase «El remoto conserva 15 migraciones», falsa y ya aplicada en producción. No se edita: una migración aplicada es historia y este proyecto compensa en vez de reescribir. La corrección vive aquí, en `GAP_LEDGER.md` y en `STATUS.md`.
 
 ## Delta último ciclo
+
+### La habilitación de una organización tiene una sola puerta · 2026-08-21 (G-055, ADR-022)
+
+- **El autorregistro se concedía a sí mismo la confianza.** `activate_ally_registration`
+  escribía `organizations.verified = true` (`202608190001:352-353`), la columna de la que
+  dependen registrar aportes y publicar el punto de acopio. Y `decide_organization_verification`
+  —la vía que ADR-013 declara obligatoria— **sólo sabía poner esa columna en `false`** al
+  rechazar: nunca la concedía. La única puerta que habilitaba era la que no dejaba rastro.
+- **Se midió antes de tocar nada.** Registrando un aliado sintético contra la base local:
+  organización `verified = true`, y un visitante **anónimo** viendo «Acopio Fundacion Fantasma
+  Sintetica · Calle Falsa 123» en la lista pública de acopios. Con `enable_confirmations = false`
+  (`G-045`) ni siquiera hubo comprobación del buzón.
+- **Matiz sobre lo que decía el ledger:** G-055 afirmaba que el defecto «contradice ADR-013».
+  Estrictamente no: ADR-013 habla del *nivel de comprobación* y ése el autorregistro sí lo
+  respetaba —nace `email_verified`, G-039 hizo su parte—. Lo roto era la otra columna, la del
+  permiso, que ADR-013 dio por conservada y nadie custodiaba.
+- **Y el ledger tampoco nombraba la mitad más expuesta.** `public_collection_centers` no
+  consultaba la organización **en absoluto**: filtraba por punto activo, que reciba y con
+  coordenada. Arreglar sólo `verified` habría dejado la publicación abierta.
+- **La regla estaba duplicada, y la segunda copia apareció atacando lo ya arreglado.**
+  Barriendo con el nombre del impostor las diez superficies legibles por `anon`, nueve daban
+  cero y `public_logistics_projections` —la tabla del mapa— daba uno: etiqueta, dirección,
+  coordenadas y `published = true`, escritos por `sync_public_collection_projection`, que tenía
+  las mismas tres condiciones y tampoco miraba la organización. Como es una tabla y no una
+  vista, hizo falta además repropagarla cuando cambia la habilitación: sin eso, habilitar
+  dejaría el punto invisible y rechazar lo dejaría publicado.
+- **El disparador no puede ser `security definer`, y se escribió así primero.** Con derechos
+  del definidor `current_user` es siempre el dueño, así que la segunda condición de la puerta
+  no distinguía nada y era decorativa. Lo destapó la prueba que pone la marca de transacción a
+  mano desde `service_role`. Con derechos del invocador sí distingue, y el dueño se lee del
+  catálogo en vez de incrustarse.
+- **Lo que se cerró:** el autorregistro nace sin habilitar; `decide_organization_verification`
+  concede con actor y sustento; `bootstrap_organization_habilitation` cubre el arranque en frío
+  con motivo y sólo desde `service_role`; `manage_organization` pierde la facultad de conceder
+  —conserva crear, renombrar y suspender—; y la escritura directa queda bloqueada aunque
+  `service_role` tenga INSERT/UPDATE e ignore RLS.
+- **El recorrido gana un paso humano y la interfaz lo dice.** `activate_ally_registration`
+  devuelve `operational`; la pantalla de activación deja de prometer «ya puedes registrar
+  aportes»; `/donar` distingue a quien no es aliado de quien lo es y espera decisión —antes le
+  decía «inicia sesión» a alguien que ya tenía sesión—.
+- **Una prueba afirmaba el defecto.** El E2E del registro terminaba en «y la cuenta ya opera».
+  Se corrigió a comprobar lo contrario en las tres superficies. `consolidation_flow_test` pasó
+  de 56 a 58: el escenario de veinte pasos ahora incluye la decisión de verificación, sin la
+  cual el paso 7 se rechaza. No se relajó nada: al recorrido le faltaba un paso real.
+- **La puerta se validó rompiéndola.** Reintroducido el `verified = true`, 7 de las 30
+  comprobaciones se ponen en rojo. Revertido después.
+- **Abiertas por esto:** `G-059` (la regla de publicación sigue existiendo dos veces, sin nada
+  que impida que vuelvan a divergir) y `G-060` (`bootstrap_organization_habilitation` es poder
+  concedido a una clave, no a una persona).
+- Evidencia: `npm run verify` verde · 63/63 unitarias · 532/532 pgTAP · 54/54 Playwright · RLS ·
+  dos concurrencias · `audit:a11y` 0 sobre 14 superficies · `audit:visual` 70 mediciones sin
+  desbordes · barrido de las 10 superficies anónimas en cero.
+
+
+### Sistema de movimiento y microinteracción · 2026-08-20
+
+- **Movimiento con tokens, no animaciones sueltas**: tres duraciones y dos curvas, y una
+  regla que las gobierna —el movimiento explica un cambio de estado o anuncia que llega
+  contenido, y nada se repite en bucle salvo lo que indica que una operación está en curso
+  (ADR-021).
+- **Microinteracción de estado declarada**: pulsación que hunde el botón, foco visible con
+  el amarillo de marca, latido mientras una operación está en vuelo, fila resaltada bajo el
+  puntero, tarjetas que se elevan, cabecera que se despega al dejar de estar arriba.
+- **Entrada por secciones en el sitio público**, con escalonado corto. La regla de seguridad:
+  **el contenido es visible por omisión**; el estado oculto solo existe bajo
+  `[data-motion="on"]`, atributo que el runtime no pone si el sistema pide menos movimiento,
+  si JavaScript falla o si nunca llega a ejecutarse. Comprobado: tras recorrer la página no
+  queda un solo bloque oculto, y con `prefers-reduced-motion` no se oculta ninguno siquiera.
+- **`audit:a11y` estrena la puerta que faltaba (`DQ-03`)**: una segunda pasada con
+  `prefers-reduced-motion: reduce` que mira lo que calcula el motor, no lo que el CSS
+  pretende, y suma a `totalProblemas` cualquier transición que sobreviva. **Se validó
+  rompiéndola a propósito** —una transición con `!important`— y señaló las siete rutas
+  públicas antes de revertirse. Un control que no puede fallar no prueba nada.
+- **Se completó el recoloreado que la identidad había dejado a medias**: el módulo CSS del
+  mapa y los colores de los marcadores vivían fuera de `globals.css` y seguían en verde.
+- **Hallazgo de entorno, no de código**: el servidor de desarrollo devolvía 403 en tres
+  chunks de cliente, así que el runtime de movimiento no llegaba a ejecutarse y parecía roto.
+  Es el mismo síntoma de `G-033`. Contra una construcción de producción todo funciona; las
+  auditorías se corrieron contra ella para que la evidencia no dependiera de un servidor
+  enfermo.
+- Evidencia: `npm run verify` verde · 63/63 unitarias · 500/500 pgTAP · 54/54 Playwright ·
+  `audit:a11y` 0 problemas y 0 rutas con movimiento pese a la preferencia · `audit:visual`
+  70 mediciones sin desbordes.
+
+
+### Identidad visual institucional · 2026-08-20
+
+- **La aplicación pasa a la identidad de Fedesoft · Cenisoft**: azul oscuro `#0d2343`, azul
+  claro `#008bed` y azul hielo `#f0f4f8`, con la marca real de Ruta Solidaria —el mosaico de
+  píxeles— en la cabecera, el ícono de la aplicación y la banda del portal (ADR-020).
+- **Se recolorearon los tokens, no las reglas.** Los 98 colores sueltos del stylesheet se
+  pasaron a la familia azul **conservando la luminosidad de cada uno**, que es lo que hace
+  que el contraste de toda la aplicación sobreviva a un cambio de familia cromática.
+- **La marca dejó de imitarse.** Donde había un cuadrado con tres puntos que hacía de
+  logotipo ahora está el activo real, servido como imagen; el ícono de la aplicación y los
+  del manifiesto se generaron del mismo archivo.
+- **DQ-08: el azul de identidad no sirve para escribir.** `#008bed` da 3,55:1 sobre blanco:
+  como fondo del botón principal dejaba la etiqueta de 14 px por debajo de AA y como
+  antetítulo de 12 px se quedaba en 4,18. Lo destapó `audit:a11y` al pasar de 3 a 9
+  indeterminados. Ahora hay dos azules con papeles distintos —`--brand` para lo gráfico,
+  `--forest-2` (`#0b5ea3`) para lo que es texto o lo sostiene— y la puerta vuelve a 0.
+  Es una desviación deliberada del comparativo, documentada.
+- Los tres rótulos sobre la fotografía del portal se volvieron a medir a mano: el velo azul
+  oscuro compuesto sobre la peor zona de la foto da **10,2:1** en blanco y **7,87:1** en el
+  secundario, mejor que el velo verde anterior.
+- Evidencia: `npm run verify` verde · 63/63 unitarias · 500/500 pgTAP · 54/54 Playwright ·
+  `audit:a11y` 0 problemas en 14 superficies · `audit:visual` 70 mediciones sin desbordes.
+
+
+### Recaudo por pasarela para aportes en dinero · 2026-08-20
+
+- **El dinero ya puede entrar por la plataforma.** Antes un aporte económico solo podía
+  declararse y tesorería lo conciliaba a mano contra un extracto. Ahora existe el núcleo del
+  recaudo, agnóstico del proveedor: canal parametrizable, intención de cobro, vuelta firmada
+  del proveedor y conciliación humana (`G-053`, ADR-018 y ADR-019).
+- **Cobrar no es conciliar, y esa regla la impuso el propio esquema.** El primer diseño creaba
+  el movimiento en `provider_confirmed` y lo actualizaba al conciliar; el disparador
+  `financial_transactions_immutable` lo rechazó. El libro es append-only: no tiene asientos que
+  cambian de estado, tiene hechos. Confirmar deja la intención en `confirmed` y no escribe nada;
+  el asiento lo escribe tesorería al casar el cobro con el extracto, y nace conciliado. **El
+  saldo no se mueve hasta ese momento.**
+- **La plataforma no ve datos de pago.** Ni tarjeta, ni cuenta, ni token: solo cuánto se pidió
+  cobrar, por qué canal y qué referencia devolvió el proveedor.
+- **La base no guarda secretos y la aplicación no estrena una clave de administración.**
+  `payment_providers` guarda el SHA-256 del secreto de webhook. La ruta del webhook verifica la
+  firma HMAC del cuerpo y llama a la RPC con la clave publicable, enviando el secreto como
+  argumento; PostgreSQL compara huellas. `src/` sigue sin contener ninguna clave `service_role`.
+- **`public_config` rechaza por nombre cualquier llave que huela a secreto** (`api_key`, `token`,
+  `clave`…): el campo de configuración libre es el sitio más probable donde alguien pegaría una
+  credencial.
+- **El canal de práctica no es una maqueta.** Firma su aviso con el mismo secreto y lo manda al
+  mismo webhook que usaría un proveedor real, así que el recorrido probado es el que se operará.
+  Lo único simulado es que nadie paga.
+- **Sigue sin haber proveedor real (`G-054`).** Conectarlo no es trabajo de código —el adaptador
+  es una función que devuelve la URL de checkout— sino de contrato, credenciales, alcance PCI y
+  base legal (`G-004`, `G-005`). Hasta entonces la plataforma **no recauda**, y activar un canal
+  con `sandbox = false` exige autoridad global y un motivo escrito.
+- Evidencia: `npm run verify` verde · 63/63 unitarias · 500/500 pgTAP en ocho archivos ·
+  54/54 Playwright, con un recorrido completo que paga por la pasarela y concilia · RLS con el
+  recaudo cerrado a visitantes · `audit:a11y` en 0 sobre 14 superficies y `audit:visual` con 70
+  mediciones sin desbordes.
+
+
+### Consola por las tres acciones · 2026-08-20 (Fase C del loop maestro)
+
+- **`/operaciones` deja de ser un menú de módulos.** Abre con «¿Qué necesitas hacer?» y las
+  tres acciones humanas del recorrido —Solicitar, Recibir, Despachar— como nivel visual
+  dominante, cada una con la cifra real de lo que espera y enlazada a su etapa. Lo demás
+  (revisar, inventario, movimiento, tesorería, parametrización) baja a soporte (`G-052`).
+- **Las cifras salen de las mismas consultas que alimentan la consola de bodega**, para que
+  el tablero y la lista que se abre al pulsarlo no puedan contradecirse. «Despachar» excluye
+  las solicitudes que uno mismo creó: quien pide no autoriza, así que no están esperándole.
+- **Solo para bodega, logística y administración.** El aliado no ve las tres acciones; una
+  prueba lo comprueba, porque una consola que ofrece lo que el rol no puede hacer es peor que
+  una que no lo ofrece.
+- **DQ-07, un desborde que ninguna de las dos vistas habituales mostraba.** El panel de
+  movimiento se salía 25 px a 768 px: `inline-form` fija 88+88+150 px que no se encogen y
+  `.ops-bottom` reparte tres columnas cuyo mínimo es el min-content. Solo ocurría entre 761 y
+  1024 px, la banda donde no llega la regla móvil. Lo encontró `audit:visual`, no la vista.
+- Evidencia: `npm run verify` verde con 52/52 Playwright (dos pruebas nuevas, web y móvil),
+  `audit:a11y` en 0 sobre 14 superficies y `audit:visual` con 70 mediciones sin desbordes.
+
+
+### Solicitud logística generalizada · 2026-08-20 (Fases A y B del loop maestro)
+
+- **El eje P0 del documento maestro: un centro le pide producto a otro, aunque sean
+  organizaciones distintas.** `transfer_requests` servía para el traslado interno y solo para
+  eso: una categoría, una unidad y una cantidad, entre dos bodegas de la misma organización.
+  No se creó un segundo motor: se extendió el que había (`G-050`, ADR-015 a ADR-017).
+- **Cabecera + N líneas.** `transfer_request_items` guarda cada producto pedido y la cabecera
+  deja de llevar categoría, unidad y cantidad. Una solicitud puede pedir 500 litros de agua,
+  100 mercados y todas las cobijas que haya, en una sola operación.
+- **Los tres modos, resueltos donde tienen que resolverse.** `exact_quantity` viaja con su
+  cifra; `full_lot` y `all_available` viajan **sin cantidad**: la pone PostgreSQL al autorizar,
+  con los lotes ya bloqueados en un orden idéntico en toda transacción. Lo comprueba la prueba
+  de concurrencia: dos autorizaciones simultáneas de «todo lo disponible» sobre 120 unidades
+  reservan 120 y la segunda se rechaza con su razón, en vez de quedar autorizada y vacía.
+- **Pedir no es leer.** La cabecera separa la organización proveedora de la solicitante, y lo
+  único que atraviesa el tenant son tres funciones con compuerta explícita:
+  `shared_stock_availability` (centro, categoría, unidad, disponible, cadena de frío y fecha
+  del último movimiento), `logistics_requests` y `shipment_reconciliation_lines`.
+  `verify-rls.mjs` lo ejerce contra la API real con una cuenta que pertenece a **una sola**
+  organización: puede ver la disponibilidad y crear su solicitud, y no lee ni los puntos, ni
+  los lotes, ni los aportes, ni la auditoría, ni la evidencia de quien provee.
+- **La política es de quien provee.** `inventory_locations.shares_availability` decide si una
+  bodega publica su disponibilidad a la red del evento; si la apaga, desaparece de la
+  proyección y deja de aceptar solicitudes externas en el mismo instante.
+- **Autorización parcial por línea**, con `transfer_request_decisions` append-only para que
+  quien pidió 500 y recibió 350 pueda leer por qué, aunque la auditoría de quien decide sea
+  privada. Una cantidad exacta que no alcanza no se recorta en silencio; una línea de la
+  decisión que no pertenece a la solicitud tampoco se ignora en silencio.
+- **Recibir producto a producto (`delivery_items`).** El cálculo anterior repartía lo recibido
+  en proporción a lo despachado: con un solo producto era exacto y con varios inventaba
+  números. Y el inventario que nace en el destino ahora pertenece a **la organización que
+  recibe**, no a la que despachó: sin eso, un traslado entre organizaciones dejaba producto en
+  una bodega cuya dueña no podía leerlo. Las entregas históricas se convirtieron en líneas con
+  el mismo reparto que la vista venía aplicando, para que ninguna cifra cambiara.
+- **La consola cambia de verbo.** La etapa 03 pasa de «Trasladar» a «Solicitar»: se elige a qué
+  bodega se le pide —propia o de otra organización, desde la disponibilidad publicada—, se
+  añaden productos con su modo, y quien provee autoriza línea por línea. Al recibir no se
+  escribe el faltante: se deduce de lo despachado menos lo recibido y lo dañado.
+- **Dos cosas que encontró la ejecución y no la revisión.** La clave de idempotencia estaba
+  acotada a la organización proveedora: con dos solicitantes distintos eso era un espacio de
+  claves compartido, y una colisión le habría devuelto a uno el código de la solicitud del
+  otro. Y una comprobación nueva usaba el alias `item` dentro de un procedimiento cuya variable
+  de recorrido también se llama `item`: compilaba, y reventaba al ejecutarse. La lección del
+  ciclo anterior sigue vigente: una migración que compila no es una migración que funciona.
+- **Límite deliberado (`G-051`):** pedir *un lote concreto* a otra organización no es posible,
+  porque elegir un lote exige verlo y la disponibilidad publicada es agregada. Dentro de la
+  propia organización el lote completo sí funciona.
+- Evidencia: 453/453 pgTAP (49 nuevas del recorrido completo entre dos organizaciones), RLS
+  con la cuenta de una sola organización, dos concurrencias, build, 48/48 Playwright,
+  `audit:a11y` en 0 sobre 14 superficies y `audit:visual` con 70 mediciones sin desbordes.
+- El documento que dirige esta fase quedó versionado en
+  `docs/MASTER_OPERATING_LOOP_2026-08-20.md`. Fase A y Fase B cerradas; sigue la Fase C.
 
 ### Integración + SUPER_ADMIN · 2026-08-18
 

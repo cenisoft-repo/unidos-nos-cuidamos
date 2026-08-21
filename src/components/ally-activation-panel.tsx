@@ -6,7 +6,7 @@ import { BadgeCheck, LoaderCircle, LockKeyhole, MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toOperationalMessage } from "@/lib/user-errors";
 
-type Activation = { organization_name: string; platform_identifier: string };
+type Activation = { organization_name: string; platform_identifier: string; operational: boolean };
 type Phase = "checking" | "anonymous" | "unconfirmed" | "activated" | "failed";
 
 // El enlace del correo devuelve a esta pantalla. El cliente del navegador resuelve la sesión a
@@ -88,16 +88,25 @@ export function AllyActivationPanel() {
     );
   }
 
+  // G-055: la activación crea la organización y la membresía, pero **no** habilita a operar.
+  // Antes esta pantalla decía «ya puedes registrar aportes» siempre, porque el autorregistro
+  // se concedía a sí mismo la habilitación. Ahora la RPC devuelve si puede o no, y la
+  // pantalla dice lo que hay: prometer un permiso que no se tiene es el mismo defecto visto
+  // desde el otro lado.
   return (
     <div className="form-card"><div className="form-body">
       <BadgeCheck size={38} color="var(--forest-2)" />
       <h2 style={{ marginTop: 18 }}>Cuenta ALIADO activa.</h2>
-      <p className="lead" style={{ fontSize: 16 }}>Ya puedes registrar aportes a nombre de <strong>{activation?.organization_name}</strong>.</p>
+      {activation?.operational
+        ? <p className="lead" style={{ fontSize: 16 }}>Ya puedes registrar aportes a nombre de <strong>{activation?.organization_name}</strong>.</p>
+        : <p className="lead" style={{ fontSize: 16 }}><strong>{activation?.organization_name}</strong> quedó creada y ligada a tu cuenta. Antes de que puedas registrar aportes a su nombre, el equipo de verificación tiene que habilitarla.</p>}
       <div className="form-success">
         Identificador de aliado: <strong>{activation?.platform_identifier}</strong>
         <br />Es tu identidad dentro de la plataforma, no un buzón de correo.
       </div>
-      <Link className="button button-dark" href="/donar">Registrar un aporte</Link>
+      {activation?.operational
+        ? <Link className="button button-dark" href="/donar">Registrar un aporte</Link>
+        : <p className="form-notice">Confirmar el correo comprueba que el buzón es tuyo; no comprueba que la organización sea quien dice ser. Hasta que se revise, tu punto de acopio no aparece en el mapa público.</p>}
     </div></div>
   );
 }

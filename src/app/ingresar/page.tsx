@@ -34,7 +34,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <input id="password" name="password" type="password" autoComplete="current-password" required />
           </div>
           <button className="button button-dark button-block" type="submit">Ingresar</button>
-          <p className="form-notice">¿Aportas por primera vez? <Link href="/registro">Crea tu cuenta de aliado</Link>.</p>
+          <p className="form-info">¿Aportas por primera vez? <Link href="/registro">Crea tu cuenta de aliado</Link>.</p>
         </form>
       </section>
     </div>

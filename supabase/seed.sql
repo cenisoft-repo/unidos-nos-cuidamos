@@ -1,4 +1,13 @@
 -- Datos 100 % sintéticos para desarrollo local.
+
+-- G-055: la habilitación operativa de una organización sólo la concede
+-- `decide_organization_verification` con actor y sustento; un disparador rechaza cualquier
+-- otra vía. La siembra es arranque en frío —no hay todavía quien decida—, así que reclama
+-- la excepción de forma explícita y visible en vez de escribir la columna por la espalda.
+-- La marca sólo sirve al dueño de la base: desde la API, con `authenticated` o
+-- `service_role`, el disparador la ignora.
+select set_config('app.organization_habilitation', 'on', false);
+
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -9,7 +18,11 @@ insert into auth.users (
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000103','authenticated','authenticated','bodega@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Marta Bodega"}',now(),now(),'','','',''),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000104','authenticated','authenticated','solicita@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Sofía Solicitudes"}',now(),now(),'','','',''),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000105','authenticated','authenticated','aprueba@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Carlos Aprobaciones"}',now(),now(),'','','',''),
-  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000106','authenticated','authenticated','superadmin@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Elena Plataforma"}',now(),now(),'','','','')
+  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000106','authenticated','authenticated','superadmin@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Elena Plataforma"}',now(),now(),'','','',''),
+  -- Opera una sola organización. Existe para que la solicitud entre organizaciones se
+  -- pueda comprobar contra la API real: si quien pide tuviera membresía en las dos, nada
+  -- de lo que probara diría algo sobre el aislamiento.
+  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000107','authenticated','authenticated','manizales@rutasolidaria.local',crypt('RutaSolidaria2026!',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{"full_name":"Rosa Manizales"}',now(),now(),'','','','')
 on conflict (id) do nothing;
 
 insert into auth.identities (id, provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
@@ -18,7 +31,8 @@ from auth.users u
 where u.id in (
   '00000000-0000-0000-0000-000000000101','00000000-0000-0000-0000-000000000102',
   '00000000-0000-0000-0000-000000000103','00000000-0000-0000-0000-000000000104',
-  '00000000-0000-0000-0000-000000000105','00000000-0000-0000-0000-000000000106'
+  '00000000-0000-0000-0000-000000000105','00000000-0000-0000-0000-000000000106',
+  '00000000-0000-0000-0000-000000000107'
 )
 on conflict (provider_id, provider) do nothing;
 
@@ -41,7 +55,9 @@ insert into public.memberships(user_id,organization_id,event_id,role) values
 ('00000000-0000-0000-0000-000000000103','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','warehouse_operator'),
 ('00000000-0000-0000-0000-000000000103','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','logistics_operator'),
 ('00000000-0000-0000-0000-000000000104','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_requester'),
-('00000000-0000-0000-0000-000000000105','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_approver');
+('00000000-0000-0000-0000-000000000105','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','treasury_approver'),
+('00000000-0000-0000-0000-000000000107','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','warehouse_operator'),
+('00000000-0000-0000-0000-000000000107','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','logistics_operator');
 
 -- SUPER_ADMIN se siembra por la misma operación privilegiada que lo concede en cualquier
 -- entorno, no con un insert a mano: la escritura directa de esa fila está bloqueada por
@@ -134,6 +150,28 @@ insert into public.shipments(id,event_id,organization_id,shipment_code,status,pu
 insert into public.shipment_items(id,shipment_id,allocation_id,quantity) values
 ('71500000-0000-0000-0000-000000000001','71400000-0000-0000-0000-000000000001','71300000-0000-0000-0000-000000000001',40);
 
+-- Existencia disponible en la bodega de Red Humanitaria Demo. Sin ella la red no tiene qué
+-- ofrecer: esto es lo que las demás organizaciones del evento ven como disponibilidad
+-- compartida y lo que permite recorrer SOLICITAR → AUTORIZAR → DESPACHAR → RECIBIR entre
+-- dos organizaciones sin preparar nada a mano.
+insert into public.donations(id,event_id,organization_id,kind,status,donor_tracking_code) values
+('71000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','in_kind','received','DON-9B2D5F3C8E7A14C96D2B58FA');
+
+insert into public.donation_items(id,donation_id,category,description,quantity_promised,unit,quantity_received) values
+('71100000-0000-0000-0000-000000000002','71000000-0000-0000-0000-000000000002','Agua','Agua embotellada en cajas selladas',1000,'litro',1000),
+('71100000-0000-0000-0000-000000000003','71000000-0000-0000-0000-000000000002','Alimentos','Mercados familiares completos',300,'kit',300),
+('71100000-0000-0000-0000-000000000004','71000000-0000-0000-0000-000000000002','Refugio','Cobijas nuevas empacadas',120,'unidad',120);
+
+insert into public.inventory_lots(id,event_id,organization_id,donation_item_id,location_id,lot_code,status,category,quantity_initial,unit,condition,expires_on,received_by) values
+('71200000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','71100000-0000-0000-0000-000000000002','70000000-0000-0000-0000-000000000001','LOT-DEMO-AGUA-001','available','Agua',1000,'litro','sellado','2026-12-31','00000000-0000-0000-0000-000000000103'),
+('71200000-0000-0000-0000-000000000003','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','71100000-0000-0000-0000-000000000003','70000000-0000-0000-0000-000000000001','LOT-DEMO-MERCADO-001','available','Alimentos',300,'kit','sellado',null,'00000000-0000-0000-0000-000000000103'),
+('71200000-0000-0000-0000-000000000004','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','71100000-0000-0000-0000-000000000004','70000000-0000-0000-0000-000000000001','LOT-DEMO-COBIJA-001','available','Refugio',120,'unidad','usado',null,'00000000-0000-0000-0000-000000000103');
+
+insert into public.stock_movements(event_id,organization_id,lot_id,movement_type,quantity_delta,idempotency_key,reason,actor_id) values
+('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','71200000-0000-0000-0000-000000000002','receipt',1000,'seed-norte-agua','Recepción sintética en el Centro de acopio Norte','00000000-0000-0000-0000-000000000103'),
+('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','71200000-0000-0000-0000-000000000003','receipt',300,'seed-norte-mercados','Recepción sintética en el Centro de acopio Norte','00000000-0000-0000-0000-000000000103'),
+('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','71200000-0000-0000-0000-000000000004','receipt',120,'seed-norte-cobijas','Recepción sintética en el Centro de acopio Norte','00000000-0000-0000-0000-000000000103');
+
 insert into public.item_acceptance_rules(organization_id,event_id,category,decision,rule_text,requires_cold_chain,version,effective_from) values
 ('20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Agua','accepted','Sellada, vigente y con empaque íntegro.',false,1,'2026-08-13T00:00:00-05:00'),
 ('20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Alimentos','accepted','Empaque íntegro, rotulado y con vigencia suficiente.',false,1,'2026-08-13T00:00:00-05:00'),
@@ -157,6 +195,26 @@ insert into public.item_acceptance_rules(organization_id,event_id,category,decis
 
 insert into public.funds(id,event_id,organization_id,name,verified,restrictions) values
 ('80000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','Fondo de respuesta · sandbox',true,'Solo gastos del ejercicio; sin movimientos reales.');
+
+
+-- Canal de recaudo de práctica. Se registra por la misma RPC auditada que se usaría con un
+-- proveedor real —de ahí el `set_config` con la sesión de administración— para que el
+-- sandbox ejercite el camino verdadero y no una fila escrita a mano. No mueve dinero: su
+-- «pasarela» es una página del propio sandbox y su secreto es público a propósito, porque
+-- lo único que protege es un cobro simulado. Activar un canal que sí mueve dinero exige
+-- autoridad global y queda registrado con su motivo.
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
+select public.set_payment_provider(
+  null,
+  '10000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000001',
+  '80000000-0000-0000-0000-000000000001',
+  'practica', 'Pasarela de práctica', true, true,
+  '{"etiqueta":"Pago simulado del sandbox","moneda":"COP"}'::jsonb,
+  'secreto-de-practica-solo-para-el-sandbox-local',
+  'Canal sintético del sandbox local para probar el recorrido de recaudo'
+);
+select set_config('request.jwt.claims','', true);
 
 insert into public.public_metric_snapshots(event_id,metric_key,value,unit,formula,source_cut_at,reconciled,owner_role) values
 ('10000000-0000-0000-0000-000000000001','needs_verified',2,'casos','count(public_need_projections where published and not expired)','2026-08-13T12:00:00-05:00',true,'verifier'),

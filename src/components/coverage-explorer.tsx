@@ -361,9 +361,9 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
             source: "public-needs",
             filter: ["has", "point_count"],
             paint: {
-              "circle-color": "#153d37",
+              "circle-color": "#0d2343",
               "circle-radius": ["step", ["get", "point_count"], 18, 10, 24, 40, 30],
-              "circle-stroke-color": "#fffefb",
+              "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 4,
             },
           });
@@ -373,9 +373,9 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
             source: "public-needs",
             filter: ["!", ["has", "point_count"]],
             paint: {
-              "circle-color": ["match", ["get", "category"], "Agua", "#2f7f9c", "Higiene", "#956d21", "Alimentos", "#a75d43", "Salud", "#a7443d", "#285d53"],
+              "circle-color": ["match", ["get", "category"], "Agua", "#2c6d9f", "Higiene", "#956d21", "Alimentos", "#a75d43", "Salud", "#a7443d", "#0b5ea3"],
               "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 8, 8, 13],
-              "circle-stroke-color": "#fffefb",
+              "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 4,
             },
           });
@@ -387,7 +387,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
             paint: {
               "circle-color": "rgba(0,0,0,0)",
               "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 15, 8, 21],
-              "circle-stroke-color": "#f6bd47",
+              "circle-stroke-color": "#ffc847",
               "circle-stroke-width": 5,
               "circle-opacity": 0,
             },
@@ -399,7 +399,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
             paint: {
               "circle-color": "#236fa1",
               "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 7, 8, 11],
-              "circle-stroke-color": "#fffefb",
+              "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 3,
             },
           });
@@ -410,7 +410,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
             paint: {
               "circle-color": "#b05734",
               "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 7, 8, 12],
-              "circle-stroke-color": "#fffefb",
+              "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 3,
             },
           });
@@ -508,9 +508,9 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
       bounds.extend(position);
       L.circleMarker(position, {
         radius: selected?.id === need.id ? 11 : 8,
-        color: selected?.id === need.id ? "#f6bd47" : "#fffefb",
+        color: selected?.id === need.id ? "#ffc847" : "#ffffff",
         weight: selected?.id === need.id ? 5 : 3,
-        fillColor: need.category === "Agua" ? "#2f7f9c" : need.category === "Higiene" ? "#956d21" : "#285d53",
+        fillColor: need.category === "Agua" ? "#2c6d9f" : need.category === "Higiene" ? "#956d21" : "#0b5ea3",
         fillOpacity: 1,
       }).bindTooltip(`${need.summary} · ${need.locationLabel}`).on("click", () => setSelectedId(need.id)).addTo(layers);
     });
@@ -519,7 +519,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
       collectionPoints.filter((point) => point.originLatitude !== null && point.originLongitude !== null).forEach((point) => {
         const position: [number, number] = [Number(point.originLatitude), Number(point.originLongitude)];
         bounds.extend(position);
-        L.circleMarker(position, { radius: 8, color: "#fffefb", weight: 3, fillColor: "#236fa1", fillOpacity: 1 })
+        L.circleMarker(position, { radius: 8, color: "#ffffff", weight: 3, fillColor: "#236fa1", fillOpacity: 1 })
           .bindTooltip(`${point.label} · ${point.originLabel}`)
           .on("click", () => focusLogistics(point))
           .addTo(layers);
@@ -528,7 +528,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
       centers.filter((center) => center.latitude !== null && center.longitude !== null).forEach((center) => {
         const position: [number, number] = [Number(center.latitude), Number(center.longitude)];
         bounds.extend(position);
-        L.circleMarker(position, { radius: 8, color: "#fffefb", weight: 3, fillColor: "#236fa1", fillOpacity: 1 }).bindTooltip(`${center.name} · ${center.locationLabel}`).addTo(layers);
+        L.circleMarker(position, { radius: 8, color: "#ffffff", weight: 3, fillColor: "#236fa1", fillOpacity: 1 }).bindTooltip(`${center.name} · ${center.locationLabel}`).addTo(layers);
       });
     }
 
@@ -538,7 +538,7 @@ export function CoverageExplorer({ needs, centers, logistics, eventId }: { needs
       bounds.extend(origin);
       bounds.extend(destination);
       L.polyline([origin, destination], { color: "#b05734", weight: 4, dashArray: "8 6", opacity: .88 }).bindTooltip(`${point.publicCode}: ${point.originLabel} → ${point.destinationLabel}`).on("click", () => focusLogistics(point)).addTo(layers);
-      L.circleMarker(destination, { radius: 8, color: "#fffefb", weight: 3, fillColor: "#b05734", fillOpacity: 1 }).bindTooltip(`${point.publicCode} · ${labelStatus(point.status)}`).on("click", () => focusLogistics(point)).addTo(layers);
+      L.circleMarker(destination, { radius: 8, color: "#ffffff", weight: 3, fillColor: "#b05734", fillOpacity: 1 }).bindTooltip(`${point.publicCode} · ${labelStatus(point.status)}`).on("click", () => focusLogistics(point)).addTo(layers);
     });
 
     if (bounds.isValid()) map.fitBounds(bounds.pad(.16), { padding: [36, 36], maxZoom: 9, animate: false });

@@ -10,7 +10,7 @@
 -- 19 se actualiza el inventario destino · 20 el movimiento queda cerrado y auditable
 
 begin;
-select plan(56);
+select plan(58);
 
 -- ---------------------------------------------------------------- 1. necesidad de 50 kg
 
@@ -77,6 +77,24 @@ select is(
   (select organization_id from public.activate_ally_registration()),
   (select organization_id from flow_activation),
   '04 repetir la activación devuelve la misma organización');
+
+-- G-055 · el recorrido gana un paso, y es un paso humano. Hasta aquí el escenario daba por
+-- hecho que un aliado recién activado ya podía aportar, porque el autorregistro se concedía
+-- `organizations.verified` a sí mismo. Ahora activar entrega la organización y el rol, y
+-- nada más: habilitarla para operar es una decisión con actor y sustento. Sin este paso, el
+-- paso 7 se rechaza con «La organización debe estar activa y verificada».
+select is(
+  (select operational from flow_activation), false,
+  '04 la activación NO habilita para operar: eso lo decide verificación');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
+select is(
+  public.decide_organization_verification(
+    (select organization_id from flow_activation),
+    '10000000-0000-0000-0000-000000000001',
+    'verify', 'Documentación del aliado revisada en el ejercicio sintético'),
+  'verified',
+  '04 verificación habilita al aliado con actor y sustento');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000201","role":"authenticated"}',true);
 
 create temporary table flow_point as
 select id from public.inventory_locations
@@ -179,13 +197,15 @@ select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-00000000
 create temporary table flow_transfer as
 select * from public.request_stock_transfer(
   (select id from flow_point), (select id from flow_destination),
-  'Alimentos', 'kilogramo', 15,
+  jsonb_build_array(jsonb_build_object(
+    'category','Alimentos','unit','kilogramo','mode','exact_quantity','quantity',15
+  )),
   'La bodega destino necesita arroz para el comedor del ejercicio.',
-  'flow-transfer-001'
+  null, null, 'flow-transfer-001'
 );
 select is((select status::text from flow_transfer), 'requested', '12 la otra bodega solicita 15 kg');
 select throws_ok(
-  format($$select public.decide_stock_transfer(%L,'authorize',15,'Autorización propia que debe fallar')$$,
+  format($$select public.decide_stock_transfer(%L,'authorize',null,'Autorización propia que debe fallar')$$,
     (select request_id from flow_transfer)),
   '42501',
   'Quien solicita no puede autorizar su propia solicitud',
@@ -194,7 +214,7 @@ select throws_ok(
 
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
 select is(
-  public.decide_stock_transfer((select request_id from flow_transfer),'authorize',15,'Autorización del ejercicio')::text,
+  public.decide_stock_transfer((select request_id from flow_transfer),'authorize',null,'Autorización del ejercicio')::text,
   'authorized', '13 el administrador autoriza 15 kg de los 15 solicitados');
 select is(
   (select quantity_reserved from public.inventory_lot_positions where lot_id = (select id from flow_lot)),
@@ -267,13 +287,20 @@ select is(
   public.advance_shipment((select id from flow_shipment), 'arrived')::text,
   'arrived', '18 el despacho reporta llegada');
 select throws_ok(
-  format($$select public.register_delivery(%L, 10, 0, 0, 'flow-delivery-bad')$$, (select id from flow_shipment)),
+  format($$select public.register_delivery(%L,
+    (select jsonb_agg(jsonb_build_object('shipment_item_id', item.id, 'delivered', 10, 'damaged', 0, 'missing', 0))
+     from public.shipment_items as item where item.shipment_id = %L),
+    'flow-delivery-bad')$$, (select id from flow_shipment), (select id from flow_shipment)),
   '22023',
-  'Lo recibido, lo dañado y el faltante deben sumar 15',
+  'Lo recibido, lo dañado y el faltante de cada producto deben sumar 15',
   '18 la recepción tiene que conciliar con lo despachado'
 );
 create temporary table flow_delivery as
-select public.register_delivery((select id from flow_shipment), 15, 0, 0, 'flow-delivery-001') as id;
+select public.register_delivery(
+  (select id from flow_shipment),
+  (select jsonb_agg(jsonb_build_object('shipment_item_id', item.id, 'delivered', item.quantity, 'damaged', 0, 'missing', 0))
+   from public.shipment_items as item where item.shipment_id = (select id from flow_shipment)),
+  'flow-delivery-001') as id;
 select is(
   (select outcome from public.shipment_reconciliation((select id from flow_shipment))),
   'CONFORME', '18 el destino confirma 15 kg y la conciliación es CONFORME');
@@ -310,13 +337,15 @@ select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-00000000
 create temporary table flow_transfer_short as
 select * from public.request_stock_transfer(
   (select id from flow_point), (select id from flow_destination),
-  'Alimentos', 'kilogramo', 5,
+  jsonb_build_array(jsonb_build_object(
+    'category','Alimentos','unit','kilogramo','mode','exact_quantity','quantity',5
+  )),
   'Segundo envio del ejercicio para probar la conciliacion con faltante.',
-  'flow-transfer-002'
+  null, null, 'flow-transfer-002'
 );
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);
 select is(
-  public.decide_stock_transfer((select request_id from flow_transfer_short),'authorize',5,'Autorizacion del segundo envio')::text,
+  public.decide_stock_transfer((select request_id from flow_transfer_short),'authorize',null,'Autorizacion del segundo envio')::text,
   'authorized', '21 el administrador autoriza los 5 kg restantes');
 
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}',true);
@@ -334,7 +363,11 @@ select is(
   'arrived', '22 el segundo despacho llega al destino');
 
 create temporary table flow_delivery_short as
-select public.register_delivery((select id from flow_shipment_short), 3, 0, 2, 'flow-delivery-002') as id;
+select public.register_delivery(
+  (select id from flow_shipment_short),
+  (select jsonb_agg(jsonb_build_object('shipment_item_id', item.id, 'delivered', 3, 'damaged', 0, 'missing', 2))
+   from public.shipment_items as item where item.shipment_id = (select id from flow_shipment_short)),
+  'flow-delivery-002') as id;
 select is(
   (select outcome from public.shipment_reconciliation((select id from flow_shipment_short))),
   'NOVEDAD', '23 recibir de menos se concilia como NOVEDAD, no como conforme');

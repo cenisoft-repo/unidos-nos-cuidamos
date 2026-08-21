@@ -3,6 +3,7 @@ import "./globals.css";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PwaRegister } from "@/components/pwa-register";
+import { MotionRuntime } from "@/components/motion-runtime";
 
 export const metadata: Metadata = {
   title: { default: "Ruta Solidaria", template: "%s · Ruta Solidaria" },
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#153d37",
+  themeColor: "#0d2343",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="es" data-scroll-behavior="smooth">
       <body>
         <PwaRegister />
+        <MotionRuntime />
         <a className="skip-link" href="#contenido">Saltar al contenido</a>
         <SiteHeader />
         <main id="contenido">{children}</main>

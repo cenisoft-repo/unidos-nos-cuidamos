@@ -278,12 +278,21 @@ record("El transportador no viaja a la superficie pública", !("transport_plate"
 
 // ---------------------------------------------------------------- entrega
 
+// Se recibe producto a producto: la conciliación es por línea del despacho, no por una
+// sola cifra que sumaría unidades distintas cuando el despacho lleva varios productos.
+const shipmentLines = value("líneas del despacho", await warehouse.from("shipment_items").select("id,quantity").eq("shipment_id", shipmentId));
 record(
   "La entrega debe conciliar con lo despachado",
-  denied(await warehouse.rpc("register_delivery", { p_shipment_id: shipmentId, p_quantity_delivered: 3, p_quantity_damaged: 0, p_quantity_missing: 0, p_idempotency_key: `${runId}-baddelivery` })),
+  denied(await warehouse.rpc("register_delivery", {
+    p_shipment_id: shipmentId,
+    p_lines: shipmentLines.map((line) => ({ shipment_item_id: line.id, delivered: 3, damaged: 0, missing: 0 })),
+    p_idempotency_key: `${runId}-baddelivery`,
+  })),
 );
 const deliveryId = value("entrega", await warehouse.rpc("register_delivery", {
-  p_shipment_id: shipmentId, p_quantity_delivered: 10, p_quantity_damaged: 0, p_quantity_missing: 0, p_idempotency_key: `${runId}-delivery`,
+  p_shipment_id: shipmentId,
+  p_lines: shipmentLines.map((line) => ({ shipment_item_id: line.id, delivered: Number(line.quantity), damaged: 0, missing: 0 })),
+  p_idempotency_key: `${runId}-delivery`,
 }));
 const reconciliation = value("conciliación", await warehouse.rpc("shipment_reconciliation", { p_shipment_id: shipmentId }));
 record("La conciliación declara CONFORME cuando lo recibido cuadra", (Array.isArray(reconciliation) ? reconciliation[0] : reconciliation)?.outcome === "CONFORME");

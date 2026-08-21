@@ -162,5 +162,87 @@ assert.equal(retryError, null, "Reintentar con la misma clave no debe fallar");
 assert.equal(retryId, granted[0].data, "El reintento devuelve la misma asignación");
 assert.equal(await available(), 5, "El reintento no descuenta una segunda vez");
 
-await Promise.all([ally.auth.signOut(), coordination.auth.signOut(), warehouse.auth.signOut()]);
-console.log("RESERVATION CONCURRENCY PASS: 25 disponibles, dos reservas de 20 simultáneas, una sola completa y el Kardex cuadra en 5");
+/*
+ * Segunda garantía: la misma existencia, pedida a la vez por dos solicitudes logísticas en
+ * modo «todo lo disponible». Aquí la cantidad no la escribe nadie: la resuelve la base al
+ * autorizar. Si la resolviera antes de bloquear, las dos autorizaciones verían el mismo
+ * saldo y reservarían el doble de lo que hay. Se autorizan simultáneamente desde dos
+ * sesiones distintas, que es como ocurriría de verdad.
+ */
+const REQUEST_ORIGIN_ID = "70000000-0000-0000-0000-000000000001";
+const requester = await signedIn("manizales@rutasolidaria.local");
+
+const { data: sharedRows, error: sharedError } = await requester.rpc("shared_stock_availability", {
+  p_event_id: EVENT_ID,
+  p_category: "Refugio",
+});
+assert.equal(sharedError, null, `La disponibilidad compartida debe consultarse: ${sharedError?.message ?? ""}`);
+const compartida = (sharedRows ?? []).find((row) => row.location_id === REQUEST_ORIGIN_ID);
+assert.ok(compartida, "La bodega proveedora publica su disponibilidad de refugio");
+const disponibleAntes = Number(compartida.quantity_available);
+assert.ok(disponibleAntes > 0, "Hay existencia sobre la que competir");
+
+async function pedirTodoLoDisponible(marca) {
+  const { data, error } = await requester.rpc("request_stock_transfer", {
+    p_origin_location_id: REQUEST_ORIGIN_ID,
+    p_destination_location_id: ALLY_WAREHOUSE_ID,
+    p_items: [{ mode: "all_available", category: compartida.category, unit: compartida.unit }],
+    p_justification: "Prueba sintética de dos autorizaciones simultáneas sobre la misma existencia.",
+    p_need_case_id: null,
+    p_need_item_id: null,
+    p_idempotency_key: `traslado-${marca}-${suffix}`,
+  });
+  assert.equal(error, null, `La solicitud ${marca} debe crearse: ${error?.message ?? ""}`);
+  return (Array.isArray(data) ? data[0] : data).request_id;
+}
+
+const primeraSolicitud = await pedirTodoLoDisponible("a");
+const segundaSolicitud = await pedirTodoLoDisponible("b");
+
+const [decisionA, decisionB] = await Promise.all([
+  coordination.rpc("decide_stock_transfer", {
+    p_request_id: primeraSolicitud,
+    p_decision: "authorize",
+    p_lines: null,
+    p_note: "Autorización simultánea A",
+  }),
+  warehouse.rpc("decide_stock_transfer", {
+    p_request_id: segundaSolicitud,
+    p_decision: "authorize",
+    p_lines: null,
+    p_note: "Autorización simultánea B",
+  }),
+]);
+
+const decisiones = [decisionA, decisionB];
+const autorizadas = decisiones.filter((result) => result.error === null);
+const rechazadas = decisiones.filter((result) => result.error !== null);
+assert.equal(autorizadas.length, 1, "Solo una de las dos autorizaciones simultáneas puede reservar la existencia");
+assert.equal(rechazadas.length, 1, "La otra tiene que rechazarse con su razón, no quedar autorizada y vacía");
+assert.match(
+  rechazadas[0].error.message,
+  /No hay existencia disponible para autorizar/,
+  `La autorización perdedora debe rechazarse por existencia: ${rechazadas[0].error.message}`,
+);
+
+const { data: lineasAutorizadas, error: lineasError } = await coordination
+  .from("transfer_request_items")
+  .select("quantity_authorized,transfer_request_id")
+  .in("transfer_request_id", [primeraSolicitud, segundaSolicitud]);
+assert.equal(lineasError, null, `Las líneas deben ser legibles: ${lineasError?.message ?? ""}`);
+const totalAutorizado = lineasAutorizadas.reduce((total, row) => total + Number(row.quantity_authorized), 0);
+assert.equal(
+  totalAutorizado,
+  disponibleAntes,
+  `Entre las dos solicitudes no puede autorizarse más de lo que había: ${totalAutorizado} contra ${disponibleAntes}`,
+);
+
+const { data: quedaDisponible } = await requester.rpc("shared_stock_availability", {
+  p_event_id: EVENT_ID,
+  p_category: "Refugio",
+});
+const restante = (quedaDisponible ?? []).find((row) => row.location_id === REQUEST_ORIGIN_ID);
+assert.equal(restante, undefined, "Tras reservarlo todo, la bodega deja de publicar existencia de esa categoría");
+
+await Promise.all([ally.auth.signOut(), coordination.auth.signOut(), warehouse.auth.signOut(), requester.auth.signOut()]);
+console.log(`RESERVATION CONCURRENCY PASS: 25 disponibles con dos reservas de 20 simultáneas dejan 5, y dos solicitudes «todo lo disponible» autorizadas a la vez reservan ${disponibleAntes}, nunca ${disponibleAntes * 2}`);

@@ -291,12 +291,22 @@ async function recibirEn(locationId, articulo, sufijo) {
 async function solicitarTraslado(sufijo, cantidad) {
   const { data, error } = await bodega.rpc("request_stock_transfer", {
     p_origin_location_id: origen.id, p_destination_location_id: destino.id,
-    p_category: CATEGORIA, p_unit: UNIDAD, p_quantity: cantidad,
+    p_items: [{ mode: "exact_quantity", category: CATEGORIA, unit: UNIDAD, quantity: cantidad }],
     p_justification: `Reposición de ${CATEGORIA} para la jornada de demostración ${sufijo}`,
+    p_need_case_id: null, p_need_item_id: null,
     p_idempotency_key: `demo-tr-${marca}-${sufijo}`,
   });
   if (error) throw error;
   return Array.isArray(data) ? data[0] : data;
+}
+
+// Autoriza lo pedido tal cual: sin líneas explícitas, cada línea se autoriza por su modo.
+async function autorizarTraslado(requestId) {
+  const { error } = await admin.rpc("decide_stock_transfer", {
+    p_request_id: requestId, p_decision: "authorize",
+    p_lines: null, p_note: "Autorizado para la demostración",
+  });
+  if (error) throw error;
 }
 
 // ---------------------------------------------------- 1. esperando verificación --
@@ -346,11 +356,7 @@ if (!origen) {
   for (let i = 0; i < count; i += 1) {
     try {
       const solicitud = await solicitarTraslado(`p${i}`, 10);
-      const { error: autorizaError } = await admin.rpc("decide_stock_transfer", {
-        p_request_id: solicitud.request_id, p_decision: "authorize",
-        p_quantity_authorized: 10, p_note: "Autorizado para la demostración",
-      });
-      if (autorizaError) throw autorizaError;
+      await autorizarTraslado(solicitud.request_id);
       const { error: envioError } = await bodega.rpc("create_shipment", {
         p_allocation_id: null, p_transfer_request_id: solicitud.request_id,
         p_origin_location_id: origen.id, p_destination_location_id: destino.id,
@@ -369,11 +375,7 @@ if (!origen) {
   for (let i = 0; i < count; i += 1) {
     try {
       const solicitud = await solicitarTraslado(`m${i}`, 10);
-      const { error: autorizaError } = await admin.rpc("decide_stock_transfer", {
-        p_request_id: solicitud.request_id, p_decision: "authorize",
-        p_quantity_authorized: 10, p_note: "Autorizado para la demostración",
-      });
-      if (autorizaError) throw autorizaError;
+      await autorizarTraslado(solicitud.request_id);
       const { data: envio, error: envioError } = await bodega.rpc("create_shipment", {
         p_allocation_id: null, p_transfer_request_id: solicitud.request_id,
         p_origin_location_id: origen.id, p_destination_location_id: destino.id,

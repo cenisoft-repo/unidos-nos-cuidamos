@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { AlertTriangle, ArrowRight, Boxes, ClipboardCheck, Download, LogOut, MapPinned, QrCode, Search, ShieldCheck, WalletCards } from "lucide-react";
+import { AlertTriangle, ArrowRight, Boxes, ClipboardCheck, Download, LogOut, MapPinned, PackageCheck, PackagePlus, QrCode, Search, ShieldCheck, Truck, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseSuccess } from "@/lib/supabase/results";
@@ -93,6 +93,8 @@ export default async function OperationsPage() {
   const canSeeTreasury = hasOperationalRole(roles, ["treasury_requester", "treasury_approver", "event_admin", "auditor"]);
   // El aliado responde observaciones sobre sus propios aportes; no verifica.
   const isPartner = roles.has("partner_reporter");
+  // Quien mueve mercancía ve la consola por las tres acciones humanas del recorrido.
+  const canOperate = hasOperationalRole(roles, ["warehouse_operator", "logistics_operator", "event_admin"]);
 
   // Toda consulta se acota al evento que sirve la instancia. Sin ese filtro, una persona
   // con membresía en otro evento vería aquí su cola y sus cifras mezcladas con las de este.
@@ -129,6 +131,37 @@ export default async function OperationsPage() {
   assertSupabaseSuccess("aportes_observados", [observedResult]);
   const observedIntakes = (observedResult.data ?? []) as unknown as ObservedIntake[];
 
+  /*
+   * Las tres acciones humanas del recorrido (SOLICITAR, RECIBIR, DESPACHAR) no son
+   * etiquetas: cada una lleva cuántas cosas esperan de verdad. Las cifras salen de las
+   * mismas consultas que usa la consola de bodega, para que el número del tablero y la
+   * lista que se abre al pulsarlo no puedan contradecirse.
+   */
+  const operationResults = canOperate
+    ? await Promise.all([
+        supabase.from("inventory_locations").select("id").eq("event_id", EVENT_ID).eq("active", true),
+        supabase.from("shipments").select("id,status,origin_location_id,destination_location_id").eq("event_id", EVENT_ID).in("status", ["preparing", "dispatched", "in_transit", "arrived"]),
+        supabase.rpc("logistics_requests", { p_event_id: EVENT_ID }),
+        supabase.from("donation_items").select("quantity_promised,quantity_received,quantity_rejected,donations!inner(event_id)").eq("donations.event_id", EVENT_ID),
+      ])
+    : [];
+  assertSupabaseSuccess("acciones_operativas", operationResults);
+  const [operationLocations, operationShipments, operationRequests, operationItems] = operationResults;
+  const ownLocationIds = new Set(((operationLocations?.data ?? []) as { id: string }[]).map((location) => location.id));
+  const openShipments = (operationShipments?.data ?? []) as { status: string; origin_location_id: string | null; destination_location_id: string | null }[];
+  const logisticsRequests = (operationRequests?.data ?? []) as { status: string; is_provider: boolean; is_requester: boolean; requested_by: string }[];
+  // Una carga que viene hacia una bodega mía es lo que tengo que recibir; la que sale de
+  // una bodega mía es lo que tengo que despachar. La distinción importa entre organizaciones.
+  const arrivingLoads = openShipments.filter((shipment) => shipment.status !== "preparing" && shipment.destination_location_id && ownLocationIds.has(shipment.destination_location_id)).length;
+  const preparingLoads = openShipments.filter((shipment) => shipment.status === "preparing" && shipment.origin_location_id && ownLocationIds.has(shipment.origin_location_id)).length;
+  // Quien solicita no autoriza: una solicitud propia no está esperando a esta persona.
+  const awaitingAuthorization = logisticsRequests.filter((request) => request.is_provider && request.status === "requested" && request.requested_by !== user.id).length;
+  const awaitingPreparation = logisticsRequests.filter((request) => request.is_provider && request.status === "authorized").length;
+  const ownRequestsInFlight = logisticsRequests.filter((request) => request.is_requester && ["requested", "authorized", "dispatched"].includes(request.status)).length;
+  const contributionsToReceive = ((operationItems?.data ?? []) as { quantity_promised: number; quantity_received: number; quantity_rejected: number }[])
+    .filter((item) => Number(item.quantity_received) + Number(item.quantity_rejected) < Number(item.quantity_promised)).length;
+  const toDispatch = awaitingAuthorization + awaitingPreparation + preparingLoads;
+
   const needs = (needsResult.data ?? []) as Need[];
   const intakes = (intakesResult.data ?? []) as unknown as Intake[];
   const catalogs = toDonationFlowCatalogs((catalogsResult.data ?? []) as DonationCatalogRow[]);
@@ -141,10 +174,22 @@ export default async function OperationsPage() {
     <div className="ops-header"><div><p className="eyebrow">Centro de mando</p><h1>Buenos días, {profileResult.data?.full_name?.split(" ")[0] ?? "equipo"}.</h1><p>{memberships.map((item) => roleNames[item.role] ?? item.role).filter((value,index,array) => array.indexOf(value) === index).join(" · ")}</p></div><div className="ops-actions"><Link className="button button-outline button-small ops-export" href="/api/exports/operations.xlsx"><Download size={15} /> Exportar Excel</Link><div className="ops-user"><div className="ops-user-avatar">{(profileResult.data?.full_name ?? user.email ?? "RS").slice(0,2).toUpperCase()}</div><div><strong>{profileResult.data?.full_name}</strong><small>{user.email}</small></div></div><form action={logout}><button className="button button-outline button-small" aria-label="Cerrar sesión"><LogOut size={15} /></button></form></div></div>
     {servesNonProductionData && <div className="ops-alert"><AlertTriangle size={17} /><strong>Instancia de práctica:</strong> los datos, fondos y decisiones de esta vista no son reales.</div>}
     <nav className="ops-subnav" aria-label="Módulos operativos"><Link href="/operaciones">Mando</Link>{hasOperationalRole(roles, ["event_admin"])&&<Link href="/operaciones/centros">Puntos de entrega</Link>}{hasOperationalRole(roles, ["warehouse_operator","logistics_operator","event_admin"])&&<Link href="/operaciones/bodega">Bodega y logística</Link>}{hasOperationalRole(roles, ["treasury_requester","treasury_approver","event_admin","auditor"])&&<Link href="/operaciones/tesoreria">Tesorería</Link>}{hasOperationalRole(roles, ["warehouse_operator","logistics_operator","event_admin","auditor"])&&<Link href="/operaciones/reportes">Reportes</Link>}{isSuperAdmin&&<Link href="/operaciones/parametrizacion">Parametrización</Link>}</nav>
-    <section className="ops-launcher" aria-labelledby="ops-launcher-title"><header><div><p className="eyebrow">Acciones rápidas</p><h2 id="ops-launcher-title">¿Qué necesitas hacer ahora?</h2></div><span>Solo aparecen recorridos permitidos por tu rol.</span></header><div className="ops-launcher-grid">
+    <section className="ops-launcher" aria-labelledby="ops-launcher-title"><header><div><p className="eyebrow">Centro de operación</p><h2 id="ops-launcher-title">¿Qué necesitas hacer?</h2></div><span>Solo aparecen recorridos permitidos por tu rol.</span></header>
+    {/*
+      Las tres acciones humanas van primero y son el nivel visual dominante. Todo lo demás
+      —revisar, parametrizar, tesorería— es soporte y se lee después: una emergencia no se
+      opera desde un menú administrativo.
+    */}
+    {canOperate && <div className="ops-triad" role="group" aria-label="Acciones principales de la operación">
+      <Link className="ops-triad-card" href="/operaciones/bodega#traslados"><span><PackagePlus size={26} /></span><strong>Solicitar</strong><p>Necesito mercancía.</p><small>{ownRequestsInFlight ? `${ownRequestsInFlight} solicitud(es) tuya(s) en curso` : "Ninguna solicitud tuya en curso"}</small></Link>
+      <Link className="ops-triad-card" href="/operaciones/bodega#recepciones"><span><PackageCheck size={26} /></span><strong>Recibir</strong><p>Está llegando mercancía.</p><small>{contributionsToReceive} aporte(s) y {arrivingLoads} carga(s) por recibir</small></Link>
+      <Link className="ops-triad-card" href="/operaciones/bodega#despachos"><span><Truck size={26} /></span><strong>Despachar</strong><p>Tengo mercancía que debe salir.</p><small>{toDispatch ? `${toDispatch} en tu cola de salida` : "Nada esperando salida"}</small></Link>
+    </div>}
+    <div className="ops-launcher-grid">
       {canVerify && <Link href="#cola-verificacion"><span><ClipboardCheck size={21} /></span><div><strong>Revisar casos</strong><small>{needs.length + intakes.length} pendientes en la cola</small></div><ArrowRight size={16} /></Link>}
       {hasOperationalRole(roles, ["event_admin"]) && <Link href="/operaciones/centros"><span><MapPinned size={21} /></span><div><strong>Configurar puntos</strong><small>Ubicación, categorías y disponibilidad</small></div><ArrowRight size={16} /></Link>}
-      {hasOperationalRole(roles, ["warehouse_operator","logistics_operator","event_admin"]) && <Link href="/operaciones/bodega"><span><QrCode size={21} /></span><div><strong>Recibir o mover bienes</strong><small>Buscar código, lote o despacho</small></div><ArrowRight size={16} /></Link>}
+      {canOperate && <Link href="/operaciones/bodega#inventario"><span><Boxes size={21} /></span><div><strong>Ver inventario</strong><small>Existencia por lote derivada del Kardex</small></div><ArrowRight size={16} /></Link>}
+      {canOperate && <Link href="/operaciones/bodega#movimiento"><span><QrCode size={21} /></span><div><strong>Seguir el movimiento</strong><small>En tránsito, llegadas y novedades</small></div><ArrowRight size={16} /></Link>}
       {hasOperationalRole(roles, ["treasury_requester","treasury_approver","event_admin","auditor"]) && <Link href="/operaciones/tesoreria"><span><WalletCards size={21} /></span><div><strong>Revisar tesorería</strong><small>Solicitudes y movimientos conciliados</small></div><ArrowRight size={16} /></Link>}
       {isSuperAdmin && <Link href="/operaciones/parametrizacion"><span><ShieldCheck size={21} /></span><div><strong>Parametrizar la plataforma</strong><small>Usuarios, alcance, catálogos y auditoría</small></div><ArrowRight size={16} /></Link>}
       <Link href="/seguimiento"><span><Search size={21} /></span><div><strong>Consultar un código</strong><small>Ver el recorrido público y seguro</small></div><ArrowRight size={16} /></Link>

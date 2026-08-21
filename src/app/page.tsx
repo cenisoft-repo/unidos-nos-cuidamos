@@ -118,7 +118,7 @@ export default async function HomePage() {
       </section>
 
       <nav className="category-shortcuts" aria-label="Explorar necesidades por categoría">
-        <div className="shell category-shortcuts-grid">
+        <div className="shell category-shortcuts-grid" data-reveal-stagger>
           {NEED_CATEGORIES.map((category) => (
             <Link href="/#necesidades" key={category}>
               <span aria-hidden="true"><CategoryIcon category={category} size={21} /></span>
@@ -128,7 +128,7 @@ export default async function HomePage() {
         </div>
       </nav>
 
-      <section className="section section-white" id="necesidades">
+      <section className="section section-white" id="necesidades" data-reveal>
         <div className="shell">
           <div className="section-heading row">
             <div>
@@ -167,7 +167,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="section map-section" id="mapa-section">
+      <section className="section map-section" id="mapa-section" data-reveal>
         <div className="shell">
           <div className="section-heading map-heading">
             <p className="eyebrow">Mapa territorial</p>
@@ -178,7 +178,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="section section-white" id="centros">
+      <section className="section section-white" id="centros" data-reveal>
         <div className="shell">
           <div className="section-heading row">
             <div>
@@ -193,7 +193,7 @@ export default async function HomePage() {
       </section>
 
       <section className="impact-strip" aria-label="Cifras conciliadas">
-        <div className="shell live-grid">
+        <div className="shell live-grid" data-reveal-stagger>
           <div className="live-item intro"><strong>Lo comprobable hoy</strong><span>Solo cifras conciliadas contra su corte.</span></div>
           <div className="live-item"><strong>{metricValue(dashboard?.active_needs)}</strong><span>necesidades públicas vigentes</span></div>
           <div className="live-item"><strong>{metricValue(dashboard?.units_delivered)}</strong><span>unidades cubiertas por categoría</span></div>
@@ -201,7 +201,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="section section-forest">
+      <section className="section section-forest" data-reveal>
         <div className="shell">
           <div className="section-heading">
             <p className="eyebrow">Una ruta fácil de entender</p>
@@ -217,7 +217,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="section section-white">
+      <section className="section section-white" data-reveal>
         <div className="shell assurance-grid">
           <div className="section-heading">
             <p className="eyebrow">Confianza por diseño</p>

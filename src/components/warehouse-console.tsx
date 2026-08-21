@@ -12,14 +12,31 @@ import { labelStatus } from "@/lib/constants";
 import { transportFromForm, transportProblem, TRANSPORT_MODES } from "@/lib/shipment-transport";
 
 type PromiseItem = { id: string; category: string; description: string; quantity_promised: number; quantity_received: number; quantity_rejected: number; unit: string; donations: { donor_tracking_code: string; status: string; organization_id: string } | null };
-type Location = { id: string; name: string; organization_id: string; accepts_donations: boolean; dispatches_shipments: boolean };
+type Location = { id: string; name: string; organization_id: string; accepts_donations: boolean; dispatches_shipments: boolean; shares_availability: boolean };
 /** Posición derivada del Kardex. `quantity_initial` ya no manda: manda lo disponible. */
 type LotPosition = { lot_id: string; lot_code: string; category: string; unit: string; status: string; organization_id: string; location_id: string; quantity_physical: number; quantity_available: number; quantity_reserved: number; quantity_in_transit: number; quantity_delivered: number };
 type NeedItem = { id: string; category: string; quantity_required: number; quantity_covered: number; unit: string; need_cases: { public_location_text: string; status: string } | null };
 type Allocation = { id: string; quantity: number; status: string; organization_id: string; transfer_request_id: string | null; inventory_lots: { lot_code: string; category: string; unit: string } | null; need_items: { category: string; need_cases: { public_location_text: string } | null } | null };
 type Shipment = { id: string; shipment_code: string; status: string; public_destination: string; origin_location_id: string | null; destination_location_id: string | null; transfer_request_id: string | null; transport_mode: string | null; transport_plate: string | null; shipment_items: { quantity: number }[] };
 type Delivery = { id: string; status: string; quantity_delivered: number; quantity_damaged: number; quantity_missing: number; shipments: { shipment_code: string } | null };
-type TransferRequest = { id: string; request_code: string; status: string; category: string; unit: string; quantity_requested: number; quantity_authorized: number; justification: string; origin_location_id: string; destination_location_id: string; requested_by: string };
+/**
+ * Una solicitud pide N productos, y cada línea dice cómo los pide: una cantidad exacta,
+ * un lote completo o todo lo disponible. En los dos últimos la cantidad no viaja desde
+ * aquí: la resuelve la base al autorizar, con los lotes bloqueados.
+ */
+type RequestMode = "exact_quantity" | "full_lot" | "all_available";
+type TransferLine = { item_id: string; line_no: number; category: string; unit: string; request_mode: RequestMode; lot_id: string | null; lot_code: string | null; quantity_requested: number | null; quantity_authorized: number; quantity_available_now: number };
+type TransferRequest = { request_id: string; request_code: string; status: string; origin_location_id: string; origin_name: string; providing_organization_id: string; providing_organization_name: string; destination_location_id: string; destination_name: string; requesting_organization_id: string; requesting_organization_name: string; justification: string; decision_note: string | null; requested_by: string; is_provider: boolean; is_requester: boolean; lines: TransferLine[] };
+/** Lo que otra organización del evento publica a la red: agregado, sin lotes ni PII. */
+type Availability = { location_id: string; location_name: string; location_label: string; organization_id: string; organization_name: string; category: string; unit: string; quantity_available: number; cold_chain_capable: boolean; is_own_organization: boolean };
+type ShipmentLine = { shipment_id: string; shipment_code: string; shipment_status: string; origin_name: string | null; destination_label: string | null; shipment_item_id: string; category: string; unit: string; quantity_dispatched: number; quantity_received: number; quantity_damaged: number; quantity_missing: number; outcome: string };
+type DraftLine = { key: string; category: string; unit: string; mode: RequestMode; quantity: string; lotId: string };
+
+const REQUEST_MODE_LABELS: Record<RequestMode, string> = {
+  exact_quantity: "Una cantidad",
+  full_lot: "Un lote completo",
+  all_available: "Todo lo disponible",
+};
 
 const MOVEMENT_LABELS: Record<string, string> = {
   preparing: "Preparando",
@@ -55,6 +72,9 @@ export function WarehouseConsole({
   shipments,
   deliveries,
   transferRequests,
+  availability,
+  shipmentLines,
+  organizationIds,
   canValidate,
   userId,
 }: {
@@ -66,6 +86,9 @@ export function WarehouseConsole({
   shipments: Shipment[];
   deliveries: Delivery[];
   transferRequests: TransferRequest[];
+  availability: Availability[];
+  shipmentLines: ShipmentLine[];
+  organizationIds: string[];
   canValidate: boolean;
   userId: string;
 }) {
@@ -84,16 +107,22 @@ export function WarehouseConsole({
    * de verdad se quería hacer. Sembrar el formulario evita además reescribir a mano la
    * categoría y la unidad, que tienen que coincidir exactamente con las del lote.
    */
-  const [transferSeed, setTransferSeed] = useState<{ origin: string; category: string; unit: string; quantity: string } | null>(null);
+  const [requestOrigin, setRequestOrigin] = useState("");
+  const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
+
+  function nuevaLinea(partial: Partial<DraftLine> = {}): DraftLine {
+    return { key: crypto.randomUUID(), category: "", unit: "", mode: "exact_quantity", quantity: "", lotId: "", ...partial };
+  }
 
   function moverLoteAOtraBodega() {
     if (!selectedLot) return;
-    setTransferSeed({
-      origin: selectedLot.location_id,
+    setRequestOrigin(selectedLot.location_id);
+    setDraftLines([nuevaLinea({
       category: selectedLot.category,
       unit: selectedLot.unit,
-      quantity: String(selectedLot.quantity_available),
-    });
+      mode: "full_lot",
+      lotId: selectedLot.lot_id,
+    })]);
     document.getElementById("traslados")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   const supabase = useMemo(() => createClient(), []);
@@ -110,8 +139,50 @@ export function WarehouseConsole({
   const locationById = new Map(locations.map((location) => [location.id, location]));
   const preparingShipments = shipments.filter((shipment) => shipment.status === "preparing");
   const movingShipments = shipments.filter((shipment) => ["dispatched", "in_transit", "arrived", "incident"].includes(shipment.status));
-  const authorizedTransfers = transferRequests.filter((request) => request.status === "authorized");
+  // Preparar y despachar es de quien provee; recibir, de quien recibe.
+  const authorizedTransfers = transferRequests.filter((request) => request.status === "authorized" && request.is_provider);
   const openTransfers = transferRequests.filter((request) => request.status === "requested");
+  const ownOrganizations = new Set(organizationIds);
+
+  /*
+   * De dónde se puede pedir. Dos fuentes que no se solapan: las bodegas propias que
+   * despachan —que esta consola ya lee— y las de otras organizaciones del evento, que solo
+   * aparecen a través de la proyección de disponibilidad. La tabla de puntos ajena no se
+   * lee nunca: pedir no da acceso a la información del proveedor.
+   */
+  const originOptions = useMemo(() => {
+    const propias = new Set(organizationIds);
+    const options = new Map<string, { id: string; label: string; own: boolean }>();
+    for (const location of locations) {
+      if (location.dispatches_shipments && propias.has(location.organization_id)) {
+        options.set(location.id, { id: location.id, label: `${location.name} · tu organización`, own: true });
+      }
+    }
+    for (const row of availability) {
+      if (options.has(row.location_id)) continue;
+      options.set(row.location_id, { id: row.location_id, label: `${row.location_name} · ${row.organization_name}`, own: row.is_own_organization });
+    }
+    return Array.from(options.values());
+  }, [locations, availability, organizationIds]);
+
+  const originAvailability = availability.filter((row) => row.location_id === requestOrigin);
+  const originLots = lotPositions.filter((lot) => lot.location_id === requestOrigin && ["available", "reserved"].includes(lot.status) && Number(lot.quantity_available) > 0);
+  const originIsOwn = originOptions.find((option) => option.id === requestOrigin)?.own ?? false;
+  const destinationOptions = locations.filter((location) => location.accepts_donations && ownOrganizations.has(location.organization_id) && location.id !== requestOrigin);
+  const linesByShipment = new Map<string, ShipmentLine[]>();
+  for (const line of shipmentLines) {
+    linesByShipment.set(line.shipment_id, [...(linesByShipment.get(line.shipment_id) ?? []), line]);
+  }
+
+  /*
+   * Solo la bodega de destino confirma lo que recibió. `locationById` únicamente contiene
+   * puntos de las organizaciones de quien mira, así que una bodega de destino ausente
+   * significa que es de la otra organización: quien despachó no registra su recepción.
+   */
+  function puedeRecibir(shipment: Shipment) {
+    if (!shipment.destination_location_id) return true;
+    return locationById.has(shipment.destination_location_id);
+  }
 
   async function syncQueue() {
     const queue = readOfflineReceptions();
@@ -145,10 +216,11 @@ export function WarehouseConsole({
     setPending("");
     if (actionError) {
       setError(toOperationalMessage(actionError as Parameters<typeof toOperationalMessage>[0]));
-      return;
+      return false;
     }
     setMessage(success);
     router.refresh();
+    return true;
   }
 
   async function receive(item: PromiseItem, form: HTMLFormElement) {
@@ -199,10 +271,10 @@ export function WarehouseConsole({
     const data = new FormData(form);
     const problem = transportProblem(transportFromForm(data));
     if (problem) { setError(problem); return; }
-    await run(request.id, "Traslado en preparación con su transporte registrado.", () =>
+    await run(request.request_id, "Salida en preparación con su transporte registrado.", () =>
       supabase.rpc("create_shipment", {
         p_allocation_id: null,
-        p_transfer_request_id: request.id,
+        p_transfer_request_id: request.request_id,
         p_origin_location_id: request.origin_location_id,
         p_destination_location_id: request.destination_location_id,
         p_public_destination: null,
@@ -211,28 +283,96 @@ export function WarehouseConsole({
       }));
   }
 
+  /*
+   * Lo que viaja es el modo, no una cantidad calculada aquí. En «un lote completo» y en
+   * «todo lo disponible» la cantidad la resuelve la base al autorizar: lo que muestra esta
+   * pantalla puede haber dejado de ser cierto antes de que alguien pulse el botón.
+   */
   async function requestTransfer(form: HTMLFormElement) {
     const data = new FormData(form);
-    await run("transfer-request", "Solicitud de traslado registrada. Falta la autorización.", () =>
+    const items = draftLines.map((line) => {
+      if (line.mode === "full_lot") return { mode: "full_lot", lot_id: line.lotId };
+      if (line.mode === "all_available") return { mode: "all_available", category: line.category, unit: line.unit };
+      return { mode: "exact_quantity", category: line.category, unit: line.unit, quantity: Number(line.quantity) };
+    });
+    const incompleta = draftLines.some((line) =>
+      (line.mode === "full_lot" && !line.lotId)
+      || (line.mode !== "full_lot" && (!line.category || !line.unit))
+      || (line.mode === "exact_quantity" && !(Number(line.quantity) > 0)));
+    if (!items.length || incompleta) {
+      setError("Cada producto necesita qué se pide y, si es una cantidad exacta, cuánto.");
+      return;
+    }
+    const enviada = await run("transfer-request", "Solicitud registrada. Falta la autorización de la bodega de origen.", () =>
       supabase.rpc("request_stock_transfer", {
-        p_origin_location_id: String(data.get("origin")),
+        p_origin_location_id: requestOrigin,
         p_destination_location_id: String(data.get("destination")),
-        p_category: String(data.get("category")),
-        p_unit: String(data.get("unit")),
-        p_quantity: Number(data.get("quantity")),
+        p_items: items,
         p_justification: String(data.get("justification")).trim(),
+        p_need_case_id: null,
+        p_need_item_id: null,
         p_idempotency_key: crypto.randomUUID(),
+      }));
+    if (enviada) setDraftLines([]);
+  }
+
+  /*
+   * Autorización parcial: se envía una cantidad SOLO en las líneas cuyo valor cambió. Una
+   * línea que el operador no tocó viaja sin cantidad para que la base resuelva la suya, en
+   * vez de fijar aquí la cifra que se pintó hace un minuto.
+   */
+  async function decideTransfer(request: TransferRequest, decision: "authorize" | "reject", form: HTMLFormElement) {
+    const data = new FormData(form);
+    const overrides = decision === "authorize"
+      ? request.lines.flatMap((line) => {
+        const raw = data.get(`linea-${line.item_id}`);
+        if (raw === null) return [];
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value === defaultAuthorized(line)) return [];
+        return [{ item_id: line.item_id, quantity: value }];
+      })
+      : [];
+    await run(request.request_id, decision === "authorize" ? "Solicitud autorizada; lo autorizado quedó reservado." : "Solicitud rechazada.", () =>
+      supabase.rpc("decide_stock_transfer", {
+        p_request_id: request.request_id,
+        p_decision: decision,
+        p_lines: overrides.length ? overrides : null,
+        p_note: String(data.get("note")).trim(),
       }));
   }
 
-  async function decideTransfer(request: TransferRequest, decision: "authorize" | "reject", form: HTMLFormElement) {
+  /** Lo que se autoriza si nadie escribe nada: lo pedido, o lo que haya cuando no se pidió cifra. */
+  function defaultAuthorized(line: TransferLine) {
+    return line.request_mode === "exact_quantity"
+      ? Number(line.quantity_requested ?? 0)
+      : Number(line.quantity_available_now);
+  }
+
+  /*
+   * Recibir producto a producto. El faltante no se escribe: se deduce de lo despachado
+   * menos lo recibido y lo dañado, que es exactamente la conciliación que exige la base.
+   */
+  async function receiveShipment(shipment: Shipment, form: HTMLFormElement) {
     const data = new FormData(form);
-    await run(request.id, decision === "authorize" ? "Traslado autorizado; la cantidad quedó reservada." : "Traslado rechazado.", () =>
-      supabase.rpc("decide_stock_transfer", {
-        p_request_id: request.id,
-        p_decision: decision,
-        p_quantity_authorized: decision === "authorize" ? Number(data.get("authorized")) : null,
-        p_note: String(data.get("note")).trim(),
+    const lines = (linesByShipment.get(shipment.id) ?? []).map((line) => {
+      const delivered = Number(data.get(`recibido-${line.shipment_item_id}`));
+      const damaged = Number(data.get(`danado-${line.shipment_item_id}`));
+      return {
+        shipment_item_id: line.shipment_item_id,
+        delivered,
+        damaged,
+        missing: Number((Number(line.quantity_dispatched) - delivered - damaged).toFixed(3)),
+      };
+    });
+    if (lines.some((line) => !Number.isFinite(line.delivered) || !Number.isFinite(line.damaged) || line.missing < 0)) {
+      setError("Lo recibido y lo dañado de cada producto no pueden superar lo despachado.");
+      return;
+    }
+    await run(shipment.id, "Recepción conciliada producto a producto.", () =>
+      supabase.rpc("register_delivery", {
+        p_shipment_id: shipment.id,
+        p_lines: lines,
+        p_idempotency_key: crypto.randomUUID(),
       }));
   }
 
@@ -241,7 +381,7 @@ export function WarehouseConsole({
       <nav className="warehouse-steps" aria-label="Etapas de bodega y logística">
         <a href="#recepciones"><span>01</span> Recibir <strong>{promiseItems.length}</strong></a>
         <a href="#inventario"><span>02</span> Reservar <strong>{usableLots.length}</strong></a>
-        <a href="#traslados"><span>03</span> Trasladar <strong>{openTransfers.length}</strong></a>
+        <a href="#traslados"><span>03</span> Solicitar <strong>{openTransfers.length}</strong></a>
         <a href="#despachos"><span>04</span> Preparar <strong>{allocations.filter((allocation) => allocation.status === "reserved" && !allocation.transfer_request_id).length + authorizedTransfers.length}</strong></a>
         <a href="#movimiento"><span>05</span> Mover <strong>{movingShipments.length}</strong></a>
       </nav>
@@ -350,43 +490,139 @@ export function WarehouseConsole({
       </div>
 
       <section className="ops-panel" id="traslados">
-        <header className="ops-panel-header"><div><h2><ArrowLeftRight size={18} /> Traslados entre bodegas</h2><p>Una bodega pide, otra autoriza. La autorización reserva antes de que nada salga.</p></div><span>{openTransfers.length} por revisar</span></header>
+        <header className="ops-panel-header"><div><h2><ArrowLeftRight size={18} /> Solicitar producto</h2><p>Pide a una bodega tuya o a otra organización del evento. Quien provee autoriza, y autorizar reserva antes de que nada salga.</p></div><span>{openTransfers.length} por revisar</span></header>
         {/*
           Rejilla propia y no `inline-form`: aquella fija cuatro columnas para
-          formularios de cuatro campos, y este tiene seis. Los repartía en filas con
-          anchos que no les corresponden y truncaba «Centro de acopio Norte» a
-          «Centro de».
+          formularios de cuatro campos. Aquí además una solicitud lleva N productos, así
+          que las líneas viven en su propia lista y no en la rejilla de la cabecera.
         */}
-        <form className="transfer-form" key={transferSeed ? `${transferSeed.origin}-${transferSeed.category}-${transferSeed.unit}` : "vacio"} onSubmit={(event) => { event.preventDefault(); void requestTransfer(event.currentTarget); }}>
-          <label><span>Sale de</span><select name="origin" required defaultValue={transferSeed?.origin}>{locations.filter((location) => location.dispatches_shipments).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
-          <label><span>Llega a</span><select name="destination" required>{locations.filter((location) => location.accepts_donations).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
-          <label><span>Categoría</span><input name="category" maxLength={80} required placeholder="Ej. Agua" defaultValue={transferSeed?.category} /></label>
-          <label><span>Unidad</span><input name="unit" maxLength={40} required placeholder="Ej. litro" defaultValue={transferSeed?.unit} /></label>
-          <label><span>Cantidad</span><input name="quantity" type="number" min="0.001" step="0.001" required defaultValue={transferSeed?.quantity} /></label>
+        <form className="transfer-form" onSubmit={(event) => { event.preventDefault(); void requestTransfer(event.currentTarget); }}>
+          <label>
+            <span>Pídele a</span>
+            <select name="origin" required value={requestOrigin} onChange={(event) => { setRequestOrigin(event.target.value); setDraftLines([]); }}>
+              <option value="" disabled>Selecciona la bodega que provee</option>
+              {originOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Llega a</span>
+            <select name="destination" required defaultValue="">
+              <option value="" disabled>Selecciona tu bodega</option>
+              {destinationOptions.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+            </select>
+          </label>
+          <div className="transfer-form-wide request-lines">
+            {draftLines.map((line, index) => (
+              <fieldset className="request-line" key={line.key}>
+                <legend>Producto {index + 1}</legend>
+                {originAvailability.length ? (
+                  <label>
+                    <span>Qué necesitas</span>
+                    <select
+                      value={line.category ? `${line.category}|${line.unit}` : ""}
+                      onChange={(event) => {
+                        const [category, unit] = event.target.value.split("|");
+                        setDraftLines((lines) => lines.map((current) => current.key === line.key ? { ...current, category, unit, lotId: "" } : current));
+                      }}
+                      required
+                    >
+                      <option value="" disabled>Selecciona</option>
+                      {originAvailability.map((row) => (
+                        <option key={`${row.category}|${row.unit}`} value={`${row.category}|${row.unit}`}>
+                          {row.category} · {numberFormat.format(row.quantity_available)} {row.unit} disponibles
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <label><span>Categoría</span><input value={line.category} maxLength={80} required placeholder="Ej. Agua" onChange={(event) => setDraftLines((lines) => lines.map((current) => current.key === line.key ? { ...current, category: event.target.value } : current))} /></label>
+                    <label><span>Unidad</span><input value={line.unit} maxLength={40} required placeholder="Ej. litro" onChange={(event) => setDraftLines((lines) => lines.map((current) => current.key === line.key ? { ...current, unit: event.target.value } : current))} /></label>
+                  </>
+                )}
+                <label>
+                  <span>Cuánto</span>
+                  <select value={line.mode} onChange={(event) => setDraftLines((lines) => lines.map((current) => current.key === line.key ? { ...current, mode: event.target.value as RequestMode, lotId: "" } : current))}>
+                    <option value="exact_quantity">{REQUEST_MODE_LABELS.exact_quantity}</option>
+                    <option value="all_available">{REQUEST_MODE_LABELS.all_available}</option>
+                    {originIsOwn && <option value="full_lot">{REQUEST_MODE_LABELS.full_lot}</option>}
+                  </select>
+                </label>
+                {line.mode === "exact_quantity" && (
+                  <label><span>Cantidad</span><input type="number" min="0.001" step="0.001" required value={line.quantity} onChange={(event) => setDraftLines((lines) => lines.map((current) => current.key === line.key ? { ...current, quantity: event.target.value } : current))} /></label>
+                )}
+                {line.mode === "full_lot" && (
+                  <label>
+                    <span>Lote</span>
+                    <select value={line.lotId} required onChange={(event) => {
+                      const lot = originLots.find((candidate) => candidate.lot_id === event.target.value);
+                      setDraftLines((lines) => lines.map((current) => current.key === line.key ? { ...current, lotId: event.target.value, category: lot?.category ?? current.category, unit: lot?.unit ?? current.unit } : current));
+                    }}>
+                      <option value="" disabled>Selecciona el lote</option>
+                      {originLots.map((lot) => <option key={lot.lot_id} value={lot.lot_id}>{lot.lot_code} · {numberFormat.format(lot.quantity_available)} {lot.unit}</option>)}
+                    </select>
+                  </label>
+                )}
+                {line.mode !== "exact_quantity" && (
+                  <p className="request-line-note">La cantidad la calcula la bodega al autorizar, con lo que haya en ese momento.</p>
+                )}
+                <button className="action-button request-line-remove" type="button" onClick={() => setDraftLines((lines) => lines.filter((current) => current.key !== line.key))}>Quitar</button>
+              </fieldset>
+            ))}
+            <button className="button button-outline button-small" type="button" disabled={!requestOrigin} onClick={() => setDraftLines((lines) => [...lines, nuevaLinea()])}>
+              Agregar producto
+            </button>
+            {!requestOrigin && <p className="request-line-note">Elige primero a qué bodega le pides.</p>}
+          </div>
           <label className="transfer-form-wide"><span>Justificación</span><input name="justification" minLength={10} maxLength={500} required placeholder="Por qué se necesita en la bodega de destino" /></label>
-          <button className="action-button approve transfer-form-submit" disabled={pending === "transfer-request"}>Solicitar traslado</button>
+          <button className="action-button approve transfer-form-submit" disabled={pending === "transfer-request" || !draftLines.length}>Enviar solicitud</button>
         </form>
         <div className="ops-list">
           {openTransfers.map((request) => (
-            <article className="ops-row" key={request.id}>
+            <article className="ops-row" key={request.request_id}>
               <div>
-                <h3>{request.request_code} · {numberFormat.format(request.quantity_requested)} {request.unit} de {request.category}</h3>
-                <p>{locationById.get(request.origin_location_id)?.name} → {locationById.get(request.destination_location_id)?.name} · {request.justification}</p>
-                {request.requested_by === userId ? (
+                <h3>{request.request_code} · {request.lines.length} {request.lines.length === 1 ? "producto" : "productos"}</h3>
+                <p>{request.origin_name} ({request.providing_organization_name}) → {request.destination_name} ({request.requesting_organization_name}) · {request.justification}</p>
+                <ul className="request-line-list">
+                  {request.lines.map((line) => (
+                    <li key={line.item_id}>
+                      <strong>{line.category}</strong>{" "}
+                      {line.request_mode === "exact_quantity"
+                        ? `${numberFormat.format(Number(line.quantity_requested ?? 0))} ${line.unit}`
+                        : `${REQUEST_MODE_LABELS[line.request_mode].toLocaleLowerCase("es")}${line.lot_code ? ` (${line.lot_code})` : ""}`}
+                      {" · "}<small>hay {numberFormat.format(Number(line.quantity_available_now))} {line.unit}</small>
+                    </li>
+                  ))}
+                </ul>
+                {!request.is_provider ? (
+                  <p className="ops-inline-warning">La autoriza la bodega de origen. Aquí verás su decisión.</p>
+                ) : request.requested_by === userId ? (
                   <p className="ops-inline-warning">Tú registraste esta solicitud: la autoriza otra persona con alcance sobre la bodega de origen.</p>
                 ) : (
                   <form className="inline-form" onSubmit={(event) => event.preventDefault()}>
-                    <label><span>Autorizar</span><input name="authorized" type="number" min="0.001" max={request.quantity_requested} step="0.001" defaultValue={request.quantity_requested} /></label>
+                    {request.lines.map((line) => (
+                      <label key={line.item_id}>
+                        <span>Autorizar {line.category}</span>
+                        <input
+                          name={`linea-${line.item_id}`}
+                          type="number"
+                          min="0"
+                          max={line.request_mode === "exact_quantity" ? Number(line.quantity_requested ?? 0) : undefined}
+                          step="0.001"
+                          defaultValue={defaultAuthorized(line)}
+                        />
+                      </label>
+                    ))}
                     <label><span>Razón de la decisión</span><input name="note" minLength={5} maxLength={240} required /></label>
-                    <button className="action-button approve" disabled={pending === request.id} onClick={(event) => void decideTransfer(request, "authorize", event.currentTarget.form!)}>Autorizar y reservar</button>
-                    <button className="action-button" disabled={pending === request.id} onClick={(event) => void decideTransfer(request, "reject", event.currentTarget.form!)}>Rechazar</button>
+                    <button className="action-button approve" disabled={pending === request.request_id} onClick={(event) => void decideTransfer(request, "authorize", event.currentTarget.form!)}>Autorizar y reservar</button>
+                    <button className="action-button" disabled={pending === request.request_id} onClick={(event) => void decideTransfer(request, "reject", event.currentTarget.form!)}>Rechazar</button>
                   </form>
                 )}
               </div>
               <StatusPill status={request.status} />
             </article>
           ))}
-          {!openTransfers.length && <p className="ops-empty">No hay solicitudes de traslado por revisar.</p>}
+          {!openTransfers.length && <p className="ops-empty">No hay solicitudes por revisar.</p>}
         </div>
       </section>
 
@@ -415,13 +651,18 @@ export function WarehouseConsole({
               </article>;
             })}
             {authorizedTransfers.map((request) => (
-              <article className="ops-row" key={request.id}>
+              <article className="ops-row" key={request.request_id}>
                 <div>
-                  <h3>{request.request_code} · traslado autorizado</h3>
-                  <p>{numberFormat.format(request.quantity_authorized)} {request.unit} de {request.category} · {locationById.get(request.origin_location_id)?.name} → {locationById.get(request.destination_location_id)?.name}</p>
+                  <h3>{request.request_code} · solicitud autorizada</h3>
+                  <p>{request.origin_name} → {request.destination_name} ({request.requesting_organization_name})</p>
+                  <ul className="request-line-list">
+                    {request.lines.filter((line) => Number(line.quantity_authorized) > 0).map((line) => (
+                      <li key={line.item_id}><strong>{line.category}</strong> {numberFormat.format(Number(line.quantity_authorized))} {line.unit}</li>
+                    ))}
+                  </ul>
                   <form className="inline-form" onSubmit={(event) => { event.preventDefault(); void prepareTransferShipment(request, event.currentTarget); }}>
                     <TransportFields />
-                    <button className="action-button approve" disabled={pending === request.id}><Send size={12} /> Preparar traslado</button>
+                    <button className="action-button approve" disabled={pending === request.request_id}><Send size={12} /> Preparar salida</button>
                   </form>
                 </div>
                 <StatusPill status={request.status} />
@@ -438,39 +679,52 @@ export function WarehouseConsole({
               <article className="ops-row" key={shipment.id}>
                 <div>
                   <h3>{shipment.shipment_code}</h3>
-                  <p>{locationById.get(shipment.origin_location_id ?? "")?.name ?? "Origen"} → {locationById.get(shipment.destination_location_id ?? "")?.name ?? shipment.public_destination} · {shipment.transport_mode ?? "sin transporte"} {shipment.transport_plate ?? ""}</p>
+                  <p>{linesByShipment.get(shipment.id)?.[0]?.origin_name ?? locationById.get(shipment.origin_location_id ?? "")?.name ?? "Origen"} → {linesByShipment.get(shipment.id)?.[0]?.destination_label ?? shipment.public_destination} · {shipment.transport_mode ?? "sin transporte"} {shipment.transport_plate ?? ""}</p>
                   <button className="action-button approve" disabled={pending === shipment.id} onClick={() => void run(shipment.id, "Despacho fuera de la bodega. La existencia salió del inventario de origen.", () => supabase.rpc("dispatch_shipment", { p_shipment_id: shipment.id }))}>Despachar</button>
                 </div>
                 <StatusPill status={shipment.status}>{MOVEMENT_LABELS[shipment.status] ?? labelStatus(shipment.status)}</StatusPill>
               </article>
             ))}
             {movingShipments.map((shipment) => {
+              const lines = linesByShipment.get(shipment.id) ?? [];
               const shipped = shipment.shipment_items.reduce((sum, item) => sum + Number(item.quantity), 0);
+              const conciliado = lines.length > 0 && lines.every((line) => line.outcome !== "PENDIENTE");
               return (
                 <article className="ops-row" key={shipment.id}>
                   <div>
                     <h3>{shipment.shipment_code}</h3>
-                    <p>{locationById.get(shipment.origin_location_id ?? "")?.name ?? "Origen"} → {locationById.get(shipment.destination_location_id ?? "")?.name ?? shipment.public_destination} · {numberFormat.format(shipped)} despachadas</p>
+                    <p>{lines[0]?.origin_name ?? locationById.get(shipment.origin_location_id ?? "")?.name ?? "Origen"} → {lines[0]?.destination_label ?? shipment.public_destination} · {numberFormat.format(shipped)} despachadas</p>
                     <div className="ops-actions">
                       {shipment.status === "dispatched" && <button className="action-button" disabled={pending === shipment.id} onClick={() => void run(shipment.id, "Despacho en movimiento.", () => supabase.rpc("advance_shipment", { p_shipment_id: shipment.id, p_next_state: "in_transit" }))}>Marcar en movimiento</button>}
                       {["dispatched", "in_transit"].includes(shipment.status) && <button className="action-button" disabled={pending === shipment.id} onClick={() => void run(shipment.id, "Despacho reportado como llegado.", () => supabase.rpc("advance_shipment", { p_shipment_id: shipment.id, p_next_state: "arrived" }))}>Marcar llegada</button>}
                     </div>
-                    <form className="inline-form" onSubmit={(event) => {
-                      event.preventDefault();
-                      const data = new FormData(event.currentTarget);
-                      void run(shipment.id, "Recepción conciliada en destino.", () => supabase.rpc("register_delivery", {
-                        p_shipment_id: shipment.id,
-                        p_quantity_delivered: Number(data.get("delivered")),
-                        p_quantity_damaged: Number(data.get("damaged")),
-                        p_quantity_missing: Number(data.get("missing")),
-                        p_idempotency_key: crypto.randomUUID(),
-                      }));
-                    }}>
-                      <label><span>Recibido</span><input name="delivered" type="number" min="0" max={shipped} step="0.001" defaultValue={shipped} required /></label>
-                      <label><span>Dañado</span><input name="damaged" type="number" min="0" max={shipped} step="0.001" defaultValue="0" required /></label>
-                      <label><span>Faltante</span><input name="missing" type="number" min="0" max={shipped} step="0.001" defaultValue="0" required /></label>
-                      <button className="action-button approve" disabled={pending === shipment.id}>Confirmar en destino</button>
-                    </form>
+                    {/*
+                      Se recibe producto a producto: 500 litros de agua y 100 mercados no
+                      se suman. El faltante no se escribe, se deduce de lo que salió menos
+                      lo recibido y lo dañado.
+                    */}
+                    {conciliado ? (
+                      <ul className="request-line-list">
+                        {lines.map((line) => (
+                          <li key={line.shipment_item_id}>
+                            <strong>{line.category}</strong> {numberFormat.format(Number(line.quantity_received))} de {numberFormat.format(Number(line.quantity_dispatched))} {line.unit} · {line.outcome}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : puedeRecibir(shipment) && lines.length ? (
+                      <form className="reception-form" onSubmit={(event) => { event.preventDefault(); void receiveShipment(shipment, event.currentTarget); }}>
+                        {lines.map((line) => (
+                          <div className="reception-line" key={line.shipment_item_id}>
+                            <p><strong>{line.category}</strong> · esperado {numberFormat.format(Number(line.quantity_dispatched))} {line.unit}</p>
+                            <label><span>Recibido</span><input name={`recibido-${line.shipment_item_id}`} type="number" min="0" max={Number(line.quantity_dispatched)} step="0.001" defaultValue={Number(line.quantity_dispatched)} required /></label>
+                            <label><span>Dañado</span><input name={`danado-${line.shipment_item_id}`} type="number" min="0" max={Number(line.quantity_dispatched)} step="0.001" defaultValue="0" required /></label>
+                          </div>
+                        ))}
+                        <button className="action-button approve" disabled={pending === shipment.id}>Confirmar en destino</button>
+                      </form>
+                    ) : (
+                      <p className="ops-inline-warning">Solo la bodega de destino confirma lo que recibió.</p>
+                    )}
                   </div>
                   <StatusPill status={shipment.status}>{MOVEMENT_LABELS[shipment.status] ?? labelStatus(shipment.status)}</StatusPill>
                 </article>

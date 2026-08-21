@@ -82,6 +82,31 @@ const { error: logisticsWriteError } = await anonymous.from("public_logistics_pr
 });
 assert.ok(logisticsWriteError, "Anon no puede escribir la proyección logística");
 
+/*
+ * Recaudo. Un visitante no ve ni los canales de cobro ni los cobros. La única superficie
+ * que la pasarela necesita sin sesión es la RPC de confirmación, y esa se defiende con el
+ * secreto del canal, no con la ausencia de sesión.
+ */
+const { data: canalesAnonimos } = await anonymous.from("payment_providers").select("id").limit(1);
+assert.equal(canalesAnonimos?.length ?? 0, 0, "Anon no puede leer los canales de recaudo");
+const { data: cobrosAnonimos } = await anonymous.from("payment_intents").select("id").limit(1);
+assert.equal(cobrosAnonimos?.length ?? 0, 0, "Anon no puede leer los cobros");
+const { error: cobroSinSecreto } = await anonymous.rpc("confirm_payment_intent", {
+  p_reference: "PAG-INEXISTENTE",
+  p_provider_key: "practica",
+  p_webhook_secret: "un-secreto-inventado-pero-largo-0",
+  p_outcome: "confirmed",
+  p_provider_reference: "FALSO-1",
+  p_amount: 1000,
+  p_note: null,
+});
+assert.ok(cobroSinSecreto, "Sin el secreto del canal, confirmar un cobro se rechaza");
+assert.match(
+  cobroSinSecreto.message,
+  /Pago no reconocido/,
+  "El rechazo no distingue una referencia inexistente de un secreto equivocado",
+);
+
 const { error: operationalReadError } = await anonymous.from("need_cases").select("id");
 assert.ok(operationalReadError, "Anon no debe leer la tabla operacional");
 
@@ -159,6 +184,93 @@ assert.ok(
 await partner.auth.signOut();
 
 /*
+ * Solicitud logística entre organizaciones. Rosa Manizales opera SOLO en Aliados Unidos
+ * Demo. Puede consultar lo que Red Humanitaria Demo publica a la red y pedirle producto,
+ * y no puede leer nada más de esa organización: ni su tabla de puntos, ni sus lotes, ni
+ * sus aportes, ni su auditoría, ni sus finanzas. Pedir no es un permiso de lectura.
+ */
+const requester = client();
+const { error: requesterSignInError } = await requester.auth.signInWithPassword({
+  email: "manizales@rutasolidaria.local",
+  password: "RutaSolidaria2026!",
+});
+assert.equal(requesterSignInError, null, "La cuenta solicitante sandbox debe autenticar");
+
+const { data: requesterOrganizations } = await requester.from("organizations").select("slug");
+assert.deepEqual(
+  (requesterOrganizations ?? []).map((row) => row.slug),
+  ["aliados-unidos-demo"],
+  "Quien solicita solo ve su propia organización",
+);
+
+const { data: sharedAvailability, error: availabilityError } = await requester.rpc("shared_stock_availability", {
+  p_event_id: "10000000-0000-0000-0000-000000000001",
+  p_category: null,
+});
+assert.equal(availabilityError, null, "La disponibilidad compartida debe consultarse con sesión");
+const ajena = (sharedAvailability ?? []).filter((row) => row.is_own_organization === false);
+assert.ok(ajena.length > 0, "La red publica disponibilidad de otra organización del evento");
+const columnasProhibidas = ["lot_id", "lot_code", "exact_address_private", "donor_name_private", "contact_private", "received_by"];
+for (const fila of sharedAvailability ?? []) {
+  for (const columna of columnasProhibidas) {
+    assert.equal(columna in fila, false, `La disponibilidad compartida no expone ${columna}`);
+  }
+  assert.ok(Number(fila.quantity_available) > 0, "Solo se publica lo que realmente está disponible");
+}
+
+// La proyección atraviesa el tenant; la tabla operacional no.
+const { data: foreignLocations } = await requester.from("inventory_locations").select("id,organization_id");
+assert.ok(
+  (foreignLocations ?? []).every((row) => row.organization_id === "20000000-0000-0000-0000-000000000002"),
+  "Ver disponibilidad no abre la tabla de puntos de la otra organización",
+);
+const { data: foreignLots } = await requester.from("inventory_lots").select("id,organization_id");
+assert.ok(
+  (foreignLots ?? []).every((row) => row.organization_id === "20000000-0000-0000-0000-000000000002"),
+  "Quien pide no lee los lotes de quien provee",
+);
+const { data: foreignIntakes } = await requester.from("donation_intakes").select("id");
+assert.equal(foreignIntakes?.length ?? 0, 0, "Quien pide no lee los aportes ni los donantes de la otra organización");
+const { data: foreignAudit } = await requester.from("audit_events").select("id").eq("organization_id", "20000000-0000-0000-0000-000000000001");
+assert.equal(foreignAudit?.length ?? 0, 0, "Quien pide no lee la auditoría de la otra organización");
+const { data: foreignEvidence } = await requester.from("evidence").select("id").eq("organization_id", "20000000-0000-0000-0000-000000000001");
+assert.equal(foreignEvidence?.length ?? 0, 0, "Quien pide no lee la evidencia privada de la otra organización");
+
+const solicitud = ajena[0];
+const { data: createdRequest, error: createRequestError } = await requester.rpc("request_stock_transfer", {
+  p_origin_location_id: solicitud.location_id,
+  p_destination_location_id: "70000000-0000-0000-0000-000000000002",
+  p_items: [{ mode: "all_available", category: solicitud.category, unit: solicitud.unit }],
+  p_justification: "Comprobación sintética de la solicitud entre organizaciones del evento.",
+  p_need_case_id: null,
+  p_need_item_id: null,
+  p_idempotency_key: "rls-cross-org-request",
+});
+assert.equal(createRequestError, null, "Una organización puede pedirle producto a otra del mismo evento");
+const requestId = (Array.isArray(createdRequest) ? createdRequest[0] : createdRequest)?.request_id;
+assert.ok(requestId, "La solicitud entre organizaciones devuelve su identificador");
+
+const { data: visibleRequests } = await requester.rpc("logistics_requests", {
+  p_event_id: "10000000-0000-0000-0000-000000000001",
+});
+const propia = (visibleRequests ?? []).find((row) => row.request_id === requestId);
+assert.ok(propia, "Quien pide ve su propia solicitud aunque el inventario sea de otra organización");
+assert.equal(propia.is_requester, true, "La solicitud declara que esta organización es la solicitante");
+assert.equal(propia.is_provider, false, "Y que no es la proveedora");
+assert.ok(propia.origin_name?.length > 0, "La solicitud muestra a qué bodega se le pidió");
+assert.equal(Array.isArray(propia.lines) ? propia.lines.length : 0, 1, "La solicitud conserva su línea");
+
+const { error: selfAuthorizeError } = await requester.rpc("decide_stock_transfer", {
+  p_request_id: requestId,
+  p_decision: "authorize",
+  p_lines: null,
+  p_note: "Intento de autorizar la solicitud propia",
+});
+assert.ok(selfAuthorizeError, "Quien pide no autoriza: la decisión es de la bodega de origen");
+
+await requester.auth.signOut();
+
+/*
  * Alcance transversal de SUPER_ADMIN (Fase 12). No es un bypass: pasa por las mismas
  * políticas, con la misma sesión de PostgREST que cualquiera. Lo que cambia es que las
  * compuertas lo reconocen sin exigirle una membresía por organización.
@@ -229,4 +341,4 @@ const { error: selfPromotionError } = await platform.rpc("assign_membership_role
 assert.ok(selfPromotionError, "Ni SUPER_ADMIN edita su propia membresía");
 
 await platform.auth.signOut();
-console.log("RLS PASS: mapa/logística seguros, anonimato, aislamiento de tenant, escalamiento bloqueado y alcance global comprobado");
+console.log("RLS PASS: mapa/logística seguros, anonimato, recaudo cerrado a visitantes, aislamiento de tenant, solicitud entre organizaciones sin fuga, escalamiento bloqueado y alcance global comprobado");

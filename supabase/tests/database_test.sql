@@ -1,5 +1,5 @@
 begin;
-select plan(193);
+select plan(233);
 
 select is((
   select count(*)::integer
@@ -653,18 +653,49 @@ select has_function('public', 'register_ally', array['uuid','ally_kind','text','
 select has_function('public', 'activate_ally_registration', array[]::text[], 'Existe la activación con correo confirmado');
 select has_function('public', 'need_help_options', array['uuid'], 'Existe el contrato del camino AYUDAR');
 select has_function('public', 'inventory_position', array['uuid'], 'Existe el estado global del inventario');
-select has_function('public', 'request_stock_transfer', array['uuid','uuid','text','text','numeric','text','text'], 'Existe la solicitud de traslado');
-select has_function('public', 'decide_stock_transfer', array['uuid','text','numeric','text'], 'Existe la autorización de traslado');
+select has_function('public', 'request_stock_transfer', array['uuid','uuid','jsonb','text','uuid','uuid','text'], 'Existe la solicitud logística multiproducto');
+select has_function('public', 'decide_stock_transfer', array['uuid','text','jsonb','text'], 'Existe la autorización línea por línea');
 select has_function('public', 'create_shipment', array['uuid','uuid','uuid','uuid','text','jsonb','text'], 'Existe el constructor único de despachos');
 select has_function('public', 'dispatch_shipment', array['uuid'], 'Existe la salida física separada de la preparación');
 select has_function('public', 'advance_shipment', array['uuid','text'], 'Existe el seguimiento del movimiento');
-select has_function('public', 'register_delivery', array['uuid','numeric','numeric','numeric','text'], 'La entrega distingue recibido, dañado y faltante');
+select has_function('public', 'register_delivery', array['uuid','jsonb','text'], 'La entrega se declara producto a producto');
 select has_function('public', 'shipment_reconciliation', array['uuid'], 'Existe la conciliación despachado contra recibido');
 select has_function('public', 'organization_delivery_points_near', array['uuid','uuid','double precision','double precision'], 'Existe el orden por proximidad de puntos de acopio');
 
+-- ============================================================ solicitud logística generalizada
+-- Cabecera + líneas, dos organizaciones y los tres modos de solicitud.
+
+select has_table('public', 'transfer_request_items', 'Una solicitud tiene líneas, no un solo producto');
+select has_table('public', 'transfer_request_decisions', 'La autorización parcial deja su propia historia');
+select has_table('public', 'delivery_items', 'Lo recibido se declara producto a producto');
+select has_column('public', 'transfer_requests', 'requesting_organization_id', 'La solicitud distingue quién pide de quién provee');
+select has_column('public', 'transfer_requests', 'need_case_id', 'La necesidad es un vínculo opcional de la solicitud');
+select hasnt_column('public', 'transfer_requests', 'category', 'La categoría dejó de vivir en la cabecera');
+select hasnt_column('public', 'transfer_requests', 'quantity_requested', 'La cantidad dejó de vivir en la cabecera');
+select has_column('public', 'allocations', 'transfer_request_item_id', 'La reserva sabe a qué línea de la solicitud responde');
+select has_column('public', 'inventory_locations', 'shares_availability', 'Cada bodega declara si publica su disponibilidad a la red');
+select col_is_unique('public', 'transfer_requests', array['requesting_organization_id','idempotency_key'], 'La clave de idempotencia pertenece a quien pide, no a quien provee');
+select has_function('public', 'shared_stock_availability', array['uuid','text'], 'Existe la proyección segura de disponibilidad entre organizaciones');
+select has_function('public', 'transfer_request_lines', array['uuid'], 'Existe el detalle de líneas con disponibilidad real');
+select has_function('public', 'shipment_reconciliation_lines', array['uuid','uuid'], 'Existe la conciliación por producto');
+select has_function('public', 'set_location_availability_sharing', array['uuid','boolean'], 'La política de compartir se cambia por función auditada');
+select ok(not has_function_privilege('authenticated','public.reserve_transfer_item(uuid,numeric)','EXECUTE'), 'La reserva de una línea no se ejecuta desde el cliente');
+select ok(not has_function_privilege('anon','public.shared_stock_availability(uuid,text)','EXECUTE'), 'La disponibilidad de la red no es una superficie pública');
+select ok(not has_table_privilege('anon','public.transfer_request_items','SELECT'), 'Las líneas de una solicitud no son públicas');
+select ok(not has_table_privilege('anon','public.transfer_request_decisions','SELECT'), 'Las decisiones de autorización no son públicas');
+select ok(not has_table_privilege('anon','public.delivery_items','SELECT'), 'Lo recibido producto a producto no es público');
+select ok(
+  (select count(*)::integer from pg_catalog.pg_policy as policy
+   where policy.polrelid = 'public.transfer_request_items'::regclass and policy.polcmd <> 'r') = 0,
+  'Las líneas de una solicitud no tienen política de escritura directa');
+select ok(
+  (select count(*)::integer from pg_catalog.pg_policy as policy
+   where policy.polrelid = 'public.transfer_request_decisions'::regclass and policy.polcmd <> 'r') = 0,
+  'La historia de la autorización es append-only desde la RPC, no desde el cliente');
+
 select ok(has_function_privilege('anon','public.register_ally(uuid,public.ally_kind,text,text,text,text,text,text,numeric,numeric,text)','EXECUTE'), 'Cualquiera puede iniciar el registro de aliado');
 select ok(not has_function_privilege('anon','public.activate_ally_registration()','EXECUTE'), 'Nadie activa una cuenta ALIADO sin sesión');
-select ok(not has_function_privilege('authenticated','public.reserve_lot_quantity(uuid,numeric,uuid,uuid,text)','EXECUTE'), 'La primitiva de reserva no se ejecuta desde el cliente');
+select ok(not has_function_privilege('authenticated','public.reserve_lot_quantity(uuid,numeric,uuid,uuid,uuid,text)','EXECUTE'), 'La primitiva de reserva no se ejecuta desde el cliente');
 select ok(not has_function_privilege('authenticated','public.assert_transport_ready(uuid)','EXECUTE'), 'La regla de transporte no se ejecuta desde el cliente');
 select ok(not has_function_privilege('anon','public.inventory_position(uuid)','EXECUTE'), 'El inventario no es una superficie pública');
 select ok(not has_table_privilege('anon','public.transfer_requests','SELECT'), 'Los traslados internos no son públicos');
@@ -679,6 +710,46 @@ select is(
   (select quantity_in_transit from public.inventory_lot_positions where lot_id = '71200000-0000-0000-0000-000000000001'),
   40::numeric,
   'Las 40 unidades despachadas figuran en movimiento hasta que el destino confirme');
+
+-- ============================================================ recaudo por pasarela
+-- El contrato del canal de pago: qué existe, quién puede llamarlo y qué no se puede leer.
+
+select has_table('public', 'payment_providers', 'Existe el canal de recaudo parametrizable');
+select has_table('public', 'payment_intents', 'Existe la intención de cobro');
+select has_function('public', 'set_payment_provider', array['uuid','uuid','uuid','uuid','text','text','boolean','boolean','jsonb','text','text'], 'El canal se registra por función auditada');
+select has_function('public', 'payment_options_for_intake', array['uuid'], 'Existen los canales disponibles para un aporte');
+select has_function('public', 'start_payment_intent', array['uuid','uuid','text'], 'Existe la apertura de la intención de cobro');
+select has_function('public', 'confirm_payment_intent', array['text','text','text','text','text','numeric','text'], 'Existe la vuelta del proveedor');
+select has_function('public', 'reconcile_provider_payment', array['text','text','text'], 'Existe la conciliación del cobro contra el extracto');
+select has_function('public', 'treasury_provider_payments', array['uuid'], 'Existe la cola de cobros sin conciliar');
+select has_function('public', 'publish_reconciled_money_donation', array['uuid','uuid','text','uuid'], 'Las reglas de publicación de un aporte conciliado viven en un solo lugar');
+
+-- El webhook no tiene sesión: lo autentica el secreto del canal, comprobado dentro de la
+-- función. Por eso ésta —y solo ésta— es alcanzable sin iniciar sesión.
+select ok(has_function_privilege('anon','public.confirm_payment_intent(text,text,text,text,text,numeric,text)','EXECUTE'), 'El proveedor puede confirmar un cobro sin sesión, con el secreto del canal');
+select ok(not has_function_privilege('anon','public.start_payment_intent(uuid,uuid,text)','EXECUTE'), 'Nadie abre un cobro sin sesión');
+select ok(not has_function_privilege('anon','public.set_payment_provider(uuid,uuid,uuid,uuid,text,text,boolean,boolean,jsonb,text,text)','EXECUTE'), 'Nadie parametriza un canal de recaudo sin sesión');
+select ok(not has_function_privilege('anon','public.reconcile_provider_payment(text,text,text)','EXECUTE'), 'Nadie concilia un cobro sin sesión');
+select ok(not has_function_privilege('authenticated','public.publish_reconciled_money_donation(uuid,uuid,text,uuid)','EXECUTE'), 'La publicación de un aporte conciliado no se invoca desde el cliente');
+select ok(not has_table_privilege('anon','public.payment_providers','SELECT'), 'Los canales de recaudo no son públicos');
+select ok(not has_table_privilege('anon','public.payment_intents','SELECT'), 'Los cobros no son públicos');
+-- La huella del secreto no la lee nadie: la fila sí, esa columna no.
+select ok(not has_column_privilege('authenticated','public.payment_providers','webhook_secret_sha256','SELECT'), 'La huella del secreto de webhook no es legible ni por quien puede ver el canal');
+select ok(
+  (select count(*)::integer from pg_catalog.pg_policy as policy
+   where policy.polrelid in ('public.payment_providers'::regclass, 'public.payment_intents'::regclass)
+     and policy.polcmd <> 'r') = 0,
+  'Ni los canales ni los cobros tienen política de escritura directa');
+-- El libro de movimientos no admite estados intermedios, y de ahí sale el diseño entero:
+-- confirmar un cobro no escribe un asiento que luego cambie de estado.
+select ok(
+  exists (
+    select 1 from pg_catalog.pg_trigger as trigger
+    where trigger.tgrelid = 'public.financial_transactions'::regclass
+      and not trigger.tgisinternal
+      and trigger.tgname = 'financial_transactions_immutable'
+  ),
+  'El libro de movimientos sigue siendo append-only');
 
 select * from finish();
 rollback;

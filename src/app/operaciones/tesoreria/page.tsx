@@ -30,9 +30,11 @@ export default async function TreasuryPage() {
     // El saldo no se suma sobre la lista visible: sale del libro completo.
     supabase.rpc("treasury_balance", { p_event_id: EVENT_ID }),
     supabase.rpc("expense_decisions", { p_event_id: EVENT_ID }),
+    // Cobros que la pasarela confirmó y que todavía no son saldo.
+    supabase.rpc("treasury_provider_payments", { p_event_id: EVENT_ID }),
   ]);
   assertSupabaseSuccess("tesoreria", results);
-  const [funds, transactions, expenses, balance, decisions] = results;
+  const [funds, transactions, expenses, balance, decisions, providerPayments] = results;
   const pendingMoney = canReviewMoney
     ? await supabase.rpc("treasury_pending_money_donations", { p_event_id: EVENT_ID })
     : { data: [], error: null };
@@ -46,6 +48,7 @@ export default async function TreasuryPage() {
         transactions={(transactions.data ?? []) as never[]}
         expenses={(expenses.data ?? []) as never[]}
         pendingMoney={(pendingMoney.data ?? []) as never[]}
+        providerPayments={(providerPayments.data ?? []) as never[]}
         ledger={((balance.data ?? [])[0] ?? { balance: 0, reconciled_credits: 0, reconciled_debits: 0, movement_count: 0 }) as never}
         decisions={(decisions.data ?? []) as never[]}
         userId={user.id}

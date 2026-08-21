@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Banknote,
   BadgeCheck,
@@ -20,6 +21,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { urlDeCheckout } from "@/lib/payments";
 import { createClient } from "@/lib/supabase/client";
 import { toOperationalMessage } from "@/lib/user-errors";
 import { EVENT_ID } from "@/lib/constants";
@@ -126,6 +128,94 @@ function OptionalBlock({
   );
 }
 
+
+/**
+ * Cobro del aporte económico recién registrado.
+ *
+ * Solo aparece si la organización que recauda tiene un canal activo para este evento; si no
+ * lo tiene, el comprobante queda exactamente como antes y el aporte se gestiona por fuera.
+ * El botón no cobra: abre la intención de cobro y lleva a la pasarela del proveedor, que es
+ * el único sitio donde se escriben datos de pago.
+ */
+type CanalDeCobro = {
+  provider_id: string;
+  provider_key: string;
+  display_name: string;
+  sandbox: boolean;
+  amount: number;
+  already_paid: boolean;
+};
+
+function PaymentChannels({ intakeId }: { intakeId: string }) {
+  const router = useRouter();
+  const [channels, setChannels] = useState<CanalDeCobro[]>([]);
+  const [pending, setPending] = useState("");
+  const [problem, setProblem] = useState("");
+  const keysRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!intakeId) return;
+    let vigente = true;
+    const supabase = createClient();
+    void supabase
+      .rpc("payment_options_for_intake", { p_intake_id: intakeId })
+      .then(({ data }) => { if (vigente) setChannels((data ?? []) as CanalDeCobro[]); });
+    return () => { vigente = false; };
+  }, [intakeId]);
+
+  if (!channels.length) return null;
+  if (channels[0].already_paid) {
+    return <p className="form-success" role="status">Este aporte ya tiene un cobro confirmado. Tesorería lo conciliará contra el extracto.</p>;
+  }
+
+  async function pagar(channel: CanalDeCobro) {
+    setPending(channel.provider_id);
+    setProblem("");
+    // La misma clave para el mismo canal: reintentar no abre un segundo cobro.
+    keysRef.current[channel.provider_id] ??= globalThis.crypto.randomUUID();
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("start_payment_intent", {
+      p_intake_id: intakeId,
+      p_provider_id: channel.provider_id,
+      p_idempotency_key: keysRef.current[channel.provider_id],
+    });
+    if (error) {
+      setPending("");
+      setProblem(toOperationalMessage(error, "No pudimos abrir el cobro. Intenta de nuevo en unos minutos."));
+      return;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    const destino = row?.reference ? urlDeCheckout(String(row.provider_key), String(row.reference)) : null;
+    if (!destino) {
+      setPending("");
+      setProblem("Ese canal todavía no tiene pasarela conectada en esta instancia.");
+      return;
+    }
+    router.push(destino);
+  }
+
+  return (
+    <div className="ticket-payment">
+      <span>Pagar ahora</span>
+      {problem && <p className="form-notice" role="status">{problem}</p>}
+      <div className="ticket-actions">
+        {channels.map((channel) => (
+          <button
+            className="button button-dark"
+            type="button"
+            key={channel.provider_id}
+            disabled={pending === channel.provider_id}
+            onClick={() => void pagar(channel)}
+          >
+            <Banknote size={16} /> {channel.display_name}{channel.sandbox ? " · práctica" : ""}
+          </button>
+        ))}
+      </div>
+      <small>El pago se hace en el proveedor. La plataforma no recibe ni guarda datos de tarjeta, cuenta o clave.</small>
+    </div>
+  );
+}
+
 export function DonationIntakeForm({
   organizationId,
   organizationName,
@@ -166,6 +256,8 @@ export function DonationIntakeForm({
     });
   const [stepId, setStepId] = useState<StepId>("aporte");
   const [kind, setKind] = useState<"in_kind" | "money">("in_kind");
+  // El aporte económico recién creado, para poder ofrecer su cobro en el comprobante.
+  const [intakeIdForPayment, setIntakeIdForPayment] = useState("");
   const [items, setItems] = useState<Item[]>(needSeedItems.length ? needSeedItems : [blankItem()]);
   const [declaredAmount, setDeclaredAmount] = useState("");
   const [declaredStatus, setDeclaredStatus] = useState(initialStatus);
@@ -459,6 +551,7 @@ export function DonationIntakeForm({
       setEvidenceNotice(`El aporte quedó registrado, pero ${photos.length - uploadedPhotos} ${photos.length - uploadedPhotos === 1 ? "fotografía no terminó" : "fotografías no terminaron"} de cargar. No repitas el aporte; conserva este código y contacta a administración.`);
     }
     setPending(false);
+    setIntakeIdForPayment(intakeId);
     setTrackingCode(nextTrackingCode);
   }
 
@@ -487,6 +580,7 @@ export function DonationIntakeForm({
           <Link className="button button-dark" href={`/seguimiento?codigo=${trackingCode}`}>Seguir mi aporte <ChevronRight size={16} /></Link>
           <button className="button button-outline" type="button" onClick={() => globalThis.print()}><Printer size={16} /> Guardar comprobante</button>
         </div>
+        {kind === "money" && <PaymentChannels intakeId={intakeIdForPayment} />}
         <p className="ticket-legal">Esta constancia confirma el reporte, no la recepción, conciliación, entrega ni beneficio.</p>
       </article>
     );
@@ -530,7 +624,7 @@ export function DonationIntakeForm({
             <div className="donation-kind-grid">
               <button className={kind === "in_kind" ? "is-selected" : ""} type="button" aria-pressed={kind === "in_kind"} onClick={() => { setKind("in_kind"); setStepError(""); }}><PackageCheck size={25} /><strong>Bienes en especie</strong><span>Agua, alimentos, higiene y otros artículos.</span></button>
               {/* Una necesidad puntual se cubre con bienes; el aporte económico no se registra contra ella. */}
-              {!need && <button className={kind === "money" ? "is-selected" : ""} type="button" aria-pressed={kind === "money"} onClick={() => { setKind("money"); setStepError(""); }}><Banknote size={25} /><strong>Aporte económico</strong><span>Solo registro; este canal no procesa pagos.</span></button>}
+              {!need && <button className={kind === "money" ? "is-selected" : ""} type="button" aria-pressed={kind === "money"} onClick={() => { setKind("money"); setStepError(""); }}><Banknote size={25} /><strong>Aporte económico</strong><span>Se registra primero; si hay pasarela habilitada, podrás pagarlo al final.</span></button>}
             </div>
 
             {kind === "in_kind" ? <>
@@ -555,7 +649,7 @@ export function DonationIntakeForm({
                 {items.length < 5 && <button className="button button-outline button-small" type="button" onClick={() => setItems((current) => [...current, blankItem(categoryByCode(current[0]?.category_code ?? ""))])}><Plus size={15} /> Agregar otro artículo</button>}
               </>}
             </> : <>
-              <div className="simple-confirmation"><HeartHandshake size={30} /><strong>Este canal no recauda dinero</strong><span>Registras un aporte que se gestiona por fuera de la plataforma para que tesorería verifique su soporte. Nunca escribas tarjetas, claves ni cuentas.</span></div>
+              <div className="simple-confirmation"><HeartHandshake size={30} /><strong>Registrar no es pagar</strong><span>Primero queda el aporte con su código para que tesorería lo verifique. Si hay una pasarela habilitada, al terminar podrás pagarlo por ella. <strong>Nunca escribas tarjetas, claves ni cuentas en este formulario:</strong> esos datos solo se escriben en el proveedor de pago.</span></div>
               <div className="field"><label htmlFor="declared-amount">Monto declarado (COP) <span aria-hidden="true">*</span></label><input id="declared-amount" type="number" min="1" step="1" value={declaredAmount} onChange={(event) => setDeclaredAmount(event.target.value)} placeholder="Ej. 150000" required /></div>
             </>}
 

@@ -132,6 +132,40 @@ const contar = (resultado) =>
   resultado.contrasteBajo.length + resultado.sinEtiqueta.length + resultado.imagenesSinAlt.length +
   resultado.saltosDeNivel + resultado.botonesSinNombre + (resultado.h1 === 1 ? 0 : 1);
 
+/*
+ * Comprobación de movimiento reducido (DQ-03).
+ *
+ * El stylesheet declara que con `prefers-reduced-motion: reduce` no se mueve nada, pero
+ * hasta ahora nadie lo verificaba: una animación nueva escrita con `!important`, o dentro
+ * de una regla que la cascada dejara por encima del bloqueo, habría pasado sin que se
+ * notara. Aquí se abre el navegador pidiendo menos movimiento y se mira lo que de verdad
+ * calcula el motor, no lo que el CSS pretende.
+ */
+const MOVIMIENTO = () => {
+  const infractores = [];
+  const segundos = (valor) => Math.max(...String(valor).split(",").map((parte) => {
+    const limpio = parte.trim();
+    if (limpio.endsWith("ms")) return parseFloat(limpio) / 1000;
+    return parseFloat(limpio) || 0;
+  }));
+  for (const nodo of document.querySelectorAll("body *")) {
+    if (!(nodo instanceof HTMLElement) || nodo.offsetParent === null) continue;
+    const estilo = getComputedStyle(nodo);
+    const transicion = segundos(estilo.transitionDuration);
+    const animacion = estilo.animationName === "none" ? 0 : segundos(estilo.animationDuration);
+    if (transicion > 0.05 || animacion > 0.05) {
+      infractores.push({
+        elemento: nodo.tagName.toLowerCase() + (nodo.className ? "." + String(nodo.className).split(" ")[0] : ""),
+        transicion,
+        animacion,
+        nombre: estilo.animationName,
+      });
+    }
+    if (infractores.length >= 8) break;
+  }
+  return infractores;
+};
+
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const informe = {};
@@ -157,6 +191,19 @@ for (const { clave, ruta, correo, rol } of plan.rutas) {
 }
 if (plan.rutas.length) await cerrarSesion(page, BASE);
 
+// Segundo navegador, con la preferencia del sistema puesta en «menos movimiento».
+const quieto = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+const paginaQuieta = await quieto.newPage();
+const movimiento = {};
+for (const path of PAGES) {
+  await paginaQuieta.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded" });
+  await paginaQuieta.waitForTimeout(900);
+  const infractores = await paginaQuieta.evaluate(MOVIMIENTO);
+  if (infractores.length) movimiento[path] = infractores;
+  problemas += infractores.length;
+}
+await quieto.close();
+
 await browser.close();
 const indeterminados = Object.values(informe).reduce((suma, r) => suma + r.contrasteIndeterminado.length, 0);
 console.log(JSON.stringify({
@@ -169,6 +216,9 @@ console.log(JSON.stringify({
   // No suman a `totalProblemas`: no se puede afirmar que fallen. Tampoco se
   // ocultan: si este número crece, alguien tiene que volver a medirlos a mano.
   contrasteIndeterminado: indeterminados,
+  // Esto sí suma: con «menos movimiento» pedido, cualquier cosa que siga moviéndose es
+  // un fallo, no una apreciación.
+  movimientoConPreferenciaReducida: movimiento,
   totalProblemas: problemas,
 }, null, 2));
 process.exit(problemas > 0 ? 1 : 0);

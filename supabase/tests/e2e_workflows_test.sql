@@ -49,7 +49,11 @@ select ok((select id from test_shipment) is not null,'A crea despacho auditable 
 select is((select origin_location_id from public.shipments where id=(select id from test_shipment)),'70000000-0000-0000-0000-000000000003'::uuid,'A conserva desde qué punto salió el despacho');
 select is(public.dispatch_shipment((select id from test_shipment))::text,'dispatched','A el despacho sale solo cuando el transporte está completo');
 select is((select count(*)::integer from public.public_logistics_projections where source_type='dispatch' and source_id=(select id from test_shipment) and published),1,'A proyecta el despacho en el mapa solo después de la salida');
-create temporary table test_delivery as select public.register_delivery((select id from test_shipment),89,1,0,'e2e-a-delivery-001') as id;
+create temporary table test_delivery as select public.register_delivery(
+  (select id from test_shipment),
+  (select jsonb_agg(jsonb_build_object('shipment_item_id', item.id, 'delivered', 89, 'damaged', 1, 'missing', 0))
+   from public.shipment_items as item where item.shipment_id = (select id from test_shipment)),
+  'e2e-a-delivery-001') as id;
 select ok((select id from test_delivery) is not null,'A registra 89 entregadas y 1 dañada');
 
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}',true);

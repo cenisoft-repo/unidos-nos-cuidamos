@@ -1,34 +1,130 @@
 # Estado comprobado
 
-Fecha: 2026-08-18 · Puerta: **G1**, sandbox con datos 100 % sintéticos.
+Fecha: 2026-08-21 · Puerta: **G1**, sandbox con datos 100 % sintéticos.
 G2 y G3 siguen bloqueadas: no deben incorporarse operadores, PII, dinero ni
 comunicación institucional.
 
 **Desplegado en producción el 2026-08-19.** `main` quedó en `e572801` con la
 entrega de despacho, trazabilidad y tesorería fusionada con la consolidación de
-logística, más SUPER_ADMIN y la parametrización. El remoto pasó de 28 a **38
-migraciones**; el front se desplegó por la integración de Git de Vercel y el alias
-de producción apunta al build nuevo.
+logística, más SUPER_ADMIN y la parametrización; el front se desplegó por la
+integración de Git de Vercel y el alias de producción apunta a ese build.
+
+**Lo del 20 y el 21 de agosto no está desplegado, ni comiteado.** La solicitud
+logística generalizada (`202608210001`), el recaudo por pasarela (`202608210002`)
+y la puerta de habilitación de organizaciones (`202608220001`) están comprobados
+en local y **solo en local**: son 43 migraciones en el árbol contra las que había
+en producción el 19. Comprobar el remoto con `supabase migration list`, nunca
+contra este documento.
+
+**Aviso para el despliegue de `202608220001`:** al aplicarla, toda organización
+que ya esté `verified` lo sigue estando —el disparador sólo vigila la subida—,
+pero cualquier autorregistro posterior nacerá sin habilitar y **su punto de acopio
+dejará de publicarse hasta que alguien lo decida**. Si en producción hubiera
+organizaciones autorregistradas antes de esta fecha, siguen habilitadas: cerrarlas
+es una decisión humana, no un efecto de la migración.
+
+**La plataforma sigue sin recaudar.** El único canal implementado es el de
+práctica, que no mueve dinero. Conectar un proveedor real depende de contrato,
+credenciales y base legal (`G-004`, `G-005`, `G-054`), no de código.
 
 ## Lo verificado
 
-`npm run verify` pasa de extremo a extremo sobre las 38 migraciones integradas:
+`npm run verify` pasa de extremo a extremo sobre las 43 migraciones locales:
 
 | Comprobación | Resultado |
 |---|---|
 | `preflight:local` | ok · sin enlaces activos a proyectos remotos |
 | Lint · TypeScript · build | verdes |
-| Unitarias (Vitest) | 47/47 |
-| SQL (pgTAP) | 372/372 sobre 38 migraciones, en cinco archivos |
-| RLS (`verify-rls.mjs`) | ok · anonimato, aislamiento de tenant, escalamiento bloqueado y alcance global |
+| Unitarias (Vitest) | 63/63 |
+| SQL (pgTAP) | 532/532 sobre 43 migraciones, en nueve archivos |
+| RLS (`verify-rls.mjs`) | ok · anonimato, recaudo cerrado a visitantes, aislamiento de tenant, solicitud entre organizaciones sin fuga, escalamiento bloqueado y alcance global |
 | Concurrencia de aporte | ok · doble envío produce un solo aporte |
-| Concurrencia de reserva | ok · 25 disponibles, dos reservas de 20 a la vez, una sola completa |
-| Playwright web + móvil | 44/44 · servidor propio y limpio (`G-033`) |
+| Concurrencia de reserva | ok · 25 disponibles con dos reservas de 20 a la vez dejan 5; y dos autorizaciones simultáneas de «todo lo disponible» reservan 120, nunca 240 |
+| Playwright web + móvil | 54/54 · servidor propio y limpio (`G-033`) |
 | `audit:a11y` | **0 problemas** en 14 superficies · 3 indeterminados medidos a mano |
 | `audit:visual` | 70 mediciones · cero desbordes horizontales |
 
 
 ## Qué se cerró en este ciclo
+
+**`G-055` · P0 — el autorregistro se concedía a sí mismo la confianza (2026-08-21).**
+`activate_ally_registration` escribía `organizations.verified = true`, la columna
+de la que dependen registrar aportes y publicar un punto de acopio. Y la vía que
+ADR-013 declara obligatoria, `decide_organization_verification`, **sólo sabía
+poner esa columna en `false`** al rechazar: nunca la concedía. La única puerta que
+habilitaba era la que no dejaba rastro. Medido contra la base local antes de tocar
+nada: quien llenaba el formulario quedaba habilitado y un visitante **anónimo**
+veía su acopio con la dirección escrita en el formulario.
+
+Ahora la habilitación tiene exactamente una puerta humana —con actor, sustento y
+auditoría—, una de arranque en frío con motivo, y un disparador que rechaza el
+resto, incluida la escritura directa que `service_role` podía hacer por sus
+privilegios de tabla.
+
+Dos cosas que no estaban en el enunciado de la brecha y sí en el defecto. La
+primera: `public_collection_centers` **no consultaba la organización en absoluto**,
+así que arreglar sólo la columna habría dejado la publicación abierta. La segunda,
+encontrada atacando lo ya arreglado: esa regla existe **dos veces** —también en
+`sync_public_collection_projection`, que escribe la tabla del mapa— y la segunda
+copia seguía dejando al impostor en el mapa con su dirección y sus coordenadas.
+Lo destapó barrer con su nombre las diez superficies legibles por `anon`; nueve
+daban cero y una daba uno.
+
+La puerta se validó rompiéndola: con el defecto reintroducido caen 7 de las 30
+comprobaciones. Decisión en ADR-022; queda abierto `G-059` (la regla sigue
+existiendo dos veces) y `G-060` (la vía de arranque es poder de una clave, no de
+una persona).
+
+**`G-053` · P1 — el dinero no podía entrar por la plataforma (2026-08-20).**
+Un aporte económico solo podía declararse. Ahora hay canal de recaudo
+parametrizable, intención de cobro, vuelta firmada del proveedor y conciliación
+humana. La regla que ordena todo lo demás la impuso el propio esquema: el libro
+de movimientos es append-only, así que **confirmar un cobro no escribe ningún
+asiento**; lo escribe tesorería al casarlo con el extracto, y nace conciliado. El
+saldo no se mueve antes.
+
+La plataforma no ve datos de pago, la base no guarda el secreto del webhook —solo
+su huella— y la aplicación sigue sin contener ninguna clave `service_role`: al
+webhook lo autentica el secreto del canal, comprobado dentro de la transacción.
+Queda abierto `G-054`: no hay proveedor real conectado, y conectarlo es contrato,
+credenciales y base legal, no código.
+
+Decisiones en ADR-018 y ADR-019.
+
+**`G-052` · P1 — la consola no preguntaba qué hay que hacer (2026-08-20).**
+`/operaciones` presentaba un menú de módulos donde las tres acciones humanas del
+recorrido no existían como entrada. Ahora abre con «¿Qué necesitas hacer?» y con
+Solicitar, Recibir y Despachar como nivel dominante, cada una con la cifra real
+de lo que espera —de las mismas consultas que alimentan la consola de bodega— y
+enlazada a su etapa. Solo para roles que mueven mercancía; el aliado no las ve.
+
+De paso apareció `DQ-07`: el panel de movimiento desbordaba 25 px a 768 px,
+porque `inline-form` fija anchos que no se encogen y `.ops-bottom` reparte tres
+columnas cuyo mínimo es el min-content. Solo ocurría entre 761 y 1024 px, la
+banda que ninguna de las dos vistas habituales muestra; lo encontró
+`audit:visual`, no la revisión a ojo.
+
+**`G-050` · P0 — la solicitud de producto no era una red (2026-08-20).**
+`transfer_requests` guardaba una categoría, una unidad y una cantidad entre dos
+bodegas de la **misma** organización. Ahora una solicitud es una cabecera con N
+líneas, cada una con su modo —una cantidad exacta, un lote completo o todo lo
+disponible—, y puede dirigirse a otra organización del mismo evento si la bodega
+de origen publica su disponibilidad. En los dos últimos modos la cantidad **no
+viaja desde el navegador**: la resuelve PostgreSQL al autorizar, con los lotes
+bloqueados en un orden idéntico en toda transacción. La autorización es parcial
+por línea y deja su historia append-only, legible también para quien pidió. Y la
+recepción se declara producto a producto: el inventario del destino crece solo
+con lo confirmado y pertenece a la organización que recibe.
+
+Pedir no concede lectura: lo único que atraviesa el tenant son tres funciones con
+compuerta explícita, y `verify-rls.mjs` lo ejerce con una cuenta que pertenece a
+una sola organización —ve la disponibilidad publicada y su propia solicitud, y no
+lee ni puntos, ni lotes, ni aportes, ni auditoría, ni evidencia de quien provee.
+Queda abierto `G-051`: pedir un lote **concreto** a otra organización exigiría
+publicar lotes, y eso es una decisión de privacidad, no un olvido.
+
+Decisiones en ADR-015, ADR-016 y ADR-017.
+
 
 **`G-038` · P1 — la consolidación nunca había tocado una base de datos.** Las seis
 migraciones del 19 de agosto se escribieron y se validaron sintácticamente, pero
